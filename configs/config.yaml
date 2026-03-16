@@ -1,0 +1,35 @@
+defaults:
+  - experiment: round1_frozen
+  - model/backbone: dinov2
+  - model/pooler: attn_pooler_v1
+  - _self_
+
+project:
+  name: die_vfm
+
+run:
+  output_root: runs
+  run_name: null
+  save_config_snapshot: true
+
+system:
+  seed: 42
+  device: cuda
+  num_workers: 4
+
+train:
+  max_epochs: 1
+  log_every_n_steps: 10
+  resume:
+    enabled: false
+    mode: full_resume
+    checkpoint_path: null
+    auto_resume_latest: false
+
+evaluation:
+  run_linear_probe: true
+  run_knn: true
+
+hydra:
+  job:
+    chdir: false

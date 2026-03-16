@@ -1,0 +1,5 @@
+# @package model.backbone
+name: dinov2
+variant: vitb14
+pretrained: true
+repo_source: external

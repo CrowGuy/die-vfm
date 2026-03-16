@@ -1,0 +1,3 @@
+# @package experiment
+mode: round1_frozen
+description: "Round1 frozen backbone representation pipeline."
