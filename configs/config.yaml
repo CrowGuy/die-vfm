@@ -2,6 +2,7 @@ defaults:
   - experiment: round1_frozen
   - model/backbone: dinov2
   - model/pooler: attn_pooler_v1
+  - dataset: dummy 
   - _self_
 
 project:
@@ -20,6 +21,7 @@ system:
 train:
   max_epochs: 1
   log_every_n_steps: 10
+  run_dataloader_smoke_test: true
   resume:
     enabled: false
     mode: full_resume
@@ -29,6 +31,12 @@ train:
 evaluation:
   run_linear_probe: true
   run_knn: true
+
+dataloader:
+  batch_size: 4
+  drop_last: false
+  pin_memory: false
+  persistent_workers: false
 
 hydra:
   job:

@@ -1,0 +1,14 @@
+name: dummy
+
+image_size: [224, 224]
+num_channels: 3
+num_classes: 5
+
+train_size: 16
+val_size: 8
+
+label_offset: 0
+
+split_seed:
+  train: 101
+  val: 202
