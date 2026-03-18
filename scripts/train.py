@@ -11,10 +11,48 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from die_vfm.datasets.builder import build_dataloader
+from die_vfm.models.builder import build_model
 
 
 LOGGER = logging.getLogger(__name__)
 
+
+def save_model_smoke_artifact(
+    model: Any,
+    batch: dict[str, Any],
+    output: Any,
+    run_dir: Path,
+) -> None:
+    """Saves model smoke test metadata into the run directory."""
+    artifact = {
+        "model": {
+            "name": model.__class__.__name__,
+            "embedding_dim": int(model.embedding_dim),
+            "backbone": model.backbone.__class__.__name__,
+            "pooler": model.pooler.__class__.__name__,
+        },
+        "batch": {
+            "image_shape": list(batch["image"].shape),
+            "batch_size": int(batch["image"].shape[0]),
+        },
+        "output": {
+            "embedding_shape": list(output.embedding.shape),
+        },
+    }
+
+    if output.backbone is not None:
+        artifact["output"]["backbone"] = {
+            "patch_tokens_shape": list(output.backbone.patch_tokens.shape),
+            "feature_dim": int(output.backbone.feature_dim),
+            "patch_grid": (
+                list(output.backbone.patch_grid)
+                if output.backbone.patch_grid is not None
+                else None
+            ),
+        }
+
+    artifact_path = run_dir / "model_smoke.yaml"
+    OmegaConf.save(config=OmegaConf.create(artifact), f=artifact_path)
 
 def set_random_seed(seed: int) -> None:
     """Sets random seeds for reproducibility."""
@@ -117,6 +155,30 @@ def run_dataloader_smoke_test(cfg: DictConfig, run_dir: Path) -> None:
     LOGGER.info("Batch image shape: %s", tuple(image.shape))
     LOGGER.info("Batch label shape: %s", _format_label_shape(label))
     LOGGER.info("Batch image ids: %s", image_ids)
+
+    model = build_model(cfg.model)
+
+    LOGGER.info("Built model: %s", model.__class__.__name__)
+    LOGGER.info("Backbone: %s", model.backbone.__class__.__name__)
+    LOGGER.info("Pooler: %s", model.pooler.__class__.__name__)
+
+    output = model(image)
+
+    LOGGER.info("Model forward completed.")
+    LOGGER.info("Embedding shape: %s", tuple(output.embedding.shape))
+
+    save_model_smoke_artifact(
+        model=model,
+        batch=batch,
+        output=output,
+        run_dir=run_dir,
+    )
+
+    if output.backbone is not None:
+        LOGGER.info(
+            "Patch tokens shape: %s",
+            tuple(output.backbone.patch_tokens.shape),
+        )
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")

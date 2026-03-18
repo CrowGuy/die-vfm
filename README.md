@@ -2,6 +2,9 @@
 
 Die-level visual foundation model platform.
 
+This repository provides a modular ML infrastructure for building
+**die-level visual foundation models (VFM)**.
+
 This repository skeleton provides:
 
 - Config composition via Hydra
@@ -25,6 +28,41 @@ New functionality includes:
 - Dataset metadata logging and artifact
 - Train entrypoint dataloader smoke test
 - Dataset unit tests
+
+# PR-3 Scope
+
+PR-3 introduces the **model pipeline** and connects it with the existing
+data pipeline.
+
+New functionality includes:
+
+- Model abstraction (`Backbone`, `Pooler`, `DieVFMModel`)
+- Model builder (`build_model`)
+- Dummy backbone (for testing)
+- Mean / Identity poolers
+- End-to-end model forward pipeline
+- Model forward smoke test
+- Model smoke artifact
+
+# Pipeline Overview
+
+## Data Pipeline (PR-2)
+```text
+config → dataloader → batch
+```
+
+## Model Pipeline (PR-3)
+```text
+batch["image"]
+↓
+backbone
+↓
+patch tokens
+↓
+pooler
+↓
+embedding
+```
 
 ## Repository Structure
 ```text
@@ -101,21 +139,46 @@ The dataloader collates dataset samples into batches:
 }
 ```
 ---
-## Dataloader Smoke Test
-PR-2 introduces a dataloader smoke test in `train.py`.
-
-Run:
-
-```bash
-python scripts/train.py system.num_workers=0 train.run_dataloader_smoke_test=true
+## Model Contract (PR-3)
+### Input
+```python
+image: Tensor[B, C, H, W]
 ```
-Expected output:
+### Output
+```python
+ModelOutput:
+{
+    "embedding": Tensor[B, D],
+    "backbone": BackboneOutput | None,
+    "pooler": PoolerOutput | None,
+}
+```
+
+## Smoke Test
+
+### 1. Dataloader + Model Smoke Test
+```bash
+python scripts/train.py \
+    system.num_workers=0 \
+    system.device=cpu \
+    model/backbone=dummy \
+    model/pooler=mean \
+    dataset=dummy \
+    train.run_dataloader_smoke_test=true \
+    train.run_model_forward_smoke_test=true
+```
+Expected logs:
 ```text
-Dataset metadata: {...}
 Dataloader smoke test passed.
 Batch image shape: (4, 3, 224, 224)
-Batch label shape: (4,)
-Batch image ids: ['train_00000', ...]
+
+Built model: DieVFMModel
+Backbone: DummyBackbone
+Pooler: MeanPooler
+
+Model forward completed.
+Embedding shape: (4, 192)
+
 Training bootstrap completed successfully.
 ```
 ---
@@ -126,14 +189,21 @@ During training bootstrap the following artifacts are generated:
 runs/<run_name>/
 ├── config.yaml
 ├── dataset_metadata.yaml
+├── model_smoke.yaml
 └── logs/
-└── run.log
+    └── run.log
 ```
 `dataset_metadata.yaml` contains dataset-level information such as:
 - dataset_name
 - split
 - num_samples
 - num_classes
+
+`model_smoke.yaml` contains model-level information such as:
+- model name
+- backbone / pooler
+- embedding shape
+- patch token shape
 ---
 
 ## Quick Start
@@ -150,26 +220,42 @@ python scripts/train.py
 
 ### Run with overrides
 ```bash
-python scripts/train.py run.run_name=local_debug
+python scripts/train.py run.run_name=debug
 ```
 
-### Test
+### Run smoke test
+
+```bash
+python scripts/train.py \
+    system.device=cpu \
+    system.num_workers=0
+```
+---
+## Test
 Run all tests:
 ```bash
 pytest
 ```
-- `tests/test_config.py` — config composition
-- `tests/test_dummy_dataset.py` — dataset adapter contract
-- `tests/test_train_bootstrap.py` — end-to-end bootstrap smoke test
-
-### Dataloader smoke test
-
-```bash
-python scripts/train.py system.num_workers=0
-```
+- `test_dummy_dataset.py` — dataset contract
+- `test_model_builder.py` — model construction
+- `test_dummy_backbone.py` — backbone contract
+- `test_mean_pooler.py` — pooler contract
+- `test_model_forward_smoke.py` — model pipeline
+- `test_train_bootstrap.py` — end-to-end bootstrap
 ---
+## Design Principles
+- Clear contract between components:
+    - Dataset → Batch → Model → Embedding
+- Minimal abstraction per PR
+- Fail-fast config validation
+- Testability first (dummy components)
+- Separation of:
+    - data pipeline
+    - model pipeline
+    - training logic (future work)
 
-## 3. `.gitignore`
+---
+## `.gitignore`
 
 ```gitignore
 # Python

@@ -23,13 +23,14 @@ def test_base_config_loads() -> None:
     assert cfg.system.seed == 42
     assert cfg.system.num_workers == 4
 
-    assert cfg.experiment.mode == "round1_frozen"
-    assert cfg.model.backbone.name == "dinov2"
-    assert cfg.model.pooler.name == "attn_pooler_v1"
+    assert cfg.experiment.name == "debug_model_smoke"
+    assert cfg.model.backbone.name == "dummy"
+    assert cfg.model.pooler.name == "mean"
 
     assert cfg.train.max_epochs == 1
     assert cfg.train.log_every_n_steps == 10
     assert cfg.train.run_dataloader_smoke_test is True
+    assert cfg.train.run_model_forward_smoke_test is True
 
     assert cfg.dataset.name == "dummy"
     assert list(cfg.dataset.image_size) == [224, 224]
@@ -46,5 +47,5 @@ def test_base_config_loads() -> None:
     assert cfg.dataloader.pin_memory is False
     assert cfg.dataloader.persistent_workers is False
 
-    assert cfg.evaluation.run_linear_probe is True
-    assert cfg.evaluation.run_knn is True
+    assert cfg.evaluation.run_linear_probe is False
+    assert cfg.evaluation.run_knn is False

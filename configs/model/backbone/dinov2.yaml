@@ -1,5 +1,7 @@
 # @package model.backbone
 name: dinov2
-variant: vitb14
+
+variant: vit_base
 pretrained: true
-repo_source: external
+freeze: false
+return_cls_token: true

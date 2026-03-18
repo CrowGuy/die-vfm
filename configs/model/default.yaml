@@ -1,0 +1,6 @@
+defaults:
+  - backbone: dummy
+  - pooler: mean
+
+name: die_vfm
+return_debug_outputs: true

@@ -1,8 +1,8 @@
 defaults:
-  - experiment: round1_frozen
-  - model/backbone: dinov2
-  - model/pooler: attn_pooler_v1
-  - dataset: dummy 
+  - experiment: debug_model_smoke
+  - model/backbone: dummy
+  - model/pooler: mean
+  - dataset: dummy
   - _self_
 
 project:
@@ -15,13 +15,14 @@ run:
 
 system:
   seed: 42
-  device: cuda
+  device: cpu
   num_workers: 4
 
 train:
   max_epochs: 1
   log_every_n_steps: 10
   run_dataloader_smoke_test: true
+  run_model_forward_smoke_test: true
   resume:
     enabled: false
     mode: full_resume
@@ -29,8 +30,8 @@ train:
     auto_resume_latest: false
 
 evaluation:
-  run_linear_probe: true
-  run_knn: true
+  run_linear_probe: false
+  run_knn: false
 
 dataloader:
   batch_size: 4

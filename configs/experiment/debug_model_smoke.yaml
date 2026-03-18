@@ -1,0 +1,12 @@
+name: debug_model_smoke
+
+runtime:
+  seed: 42
+  device: cpu
+
+data:
+  batch_size: 4
+  num_workers: 0
+
+model:
+  return_debug_outputs: true
