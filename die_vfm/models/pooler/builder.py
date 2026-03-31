@@ -1,72 +1,102 @@
-"""Pooler builder for die_vfm."""
+"""Factory for building pooler modules."""
 
 from __future__ import annotations
 
 from omegaconf import DictConfig
 
-from die_vfm.models.pooler.base import Pooler
+from die_vfm.models.pooler.attn_pooler_v1 import AttnPoolerV1
 from die_vfm.models.pooler.identity_pooler import IdentityPooler
 from die_vfm.models.pooler.mean_pooler import MeanPooler
 
 
-def build_pooler(cfg: DictConfig, backbone_output_dim: int) -> Pooler:
+SUPPORTED_POOLERS = {
+    "identity",
+    "mean",
+    "attn_pooler_v1",
+}
+
+
+def build_pooler(cfg: DictConfig, backbone_output_dim: int):
     """Builds a pooler from config.
 
-    Expected config schema example:
-
-        pooler:
-          name: mean
-          l2_norm: false
-
     Args:
         cfg: Pooler config.
-        backbone_output_dim: Token feature dimension produced by the backbone.
+        backbone_output_dim: Output feature dimension from backbone.
 
     Returns:
-        An initialized Pooler instance.
+        Instantiated pooler module.
 
     Raises:
-        KeyError: If required config fields are missing.
-        ValueError: If the pooler name is unsupported or config is invalid.
+        ValueError: If config is invalid or pooler name is unsupported.
     """
-    _validate_pooler_config(cfg, backbone_output_dim)
+    _validate_pooler_config(cfg=cfg, backbone_output_dim=backbone_output_dim)
 
-    name = cfg.name
-
-    if name == "mean":
-        return MeanPooler(
-            input_dim=backbone_output_dim,
-            l2_norm=cfg.get("l2_norm", False),
-        )
+    name = str(cfg.name).lower()
 
     if name == "identity":
-        return IdentityPooler(
+        return IdentityPooler(input_dim=backbone_output_dim)
+
+    if name == "mean":
+        return MeanPooler(input_dim=backbone_output_dim)
+
+    if name == "attn_pooler_v1":
+        return AttnPoolerV1(
             input_dim=backbone_output_dim,
-            l2_norm=cfg.get("l2_norm", False),
+            hidden_dim=int(cfg.hidden_dim),
+            output_dim=_optional_int(cfg.get("output_dim", None)),
+            dropout=float(cfg.get("dropout", 0.0)),
+            l2_norm=bool(cfg.get("l2_norm", False)),
+            use_cls_token_as_query=bool(cfg.get("use_cls_token_as_query", False)),
+            return_token_weights=bool(cfg.get("return_token_weights", True)),
         )
 
-    raise ValueError(f"Unsupported pooler: '{name}'.")
+    raise ValueError(
+        f"Unsupported pooler name: {cfg.name}. "
+        f"Supported poolers: {sorted(SUPPORTED_POOLERS)}."
+    )
 
 
-def _validate_pooler_config(
-    cfg: DictConfig,
-    backbone_output_dim: int,
-) -> None:
-    """Validates the minimal pooler config contract.
+def _validate_pooler_config(cfg: DictConfig, backbone_output_dim: int) -> None:
+    """Validates pooler config before construction."""
+    if cfg is None:
+        raise ValueError("Pooler config must not be None.")
 
-    Args:
-        cfg: Pooler config.
-        backbone_output_dim: Token feature dimension from the backbone.
-
-    Raises:
-        KeyError: If required fields are missing.
-        ValueError: If config values are invalid.
-    """
-    if "name" not in cfg:
-        raise KeyError("Missing required pooler config field: 'name'.")
+    if "name" not in cfg or cfg.name is None:
+        raise ValueError("Pooler config must include a non-empty 'name' field.")
 
     if backbone_output_dim <= 0:
         raise ValueError(
-            "backbone_output_dim must be > 0, "
-            f"got {backbone_output_dim}."
+            f"backbone_output_dim must be > 0, got {backbone_output_dim}."
         )
+
+    name = str(cfg.name).lower()
+    if name not in SUPPORTED_POOLERS:
+        raise ValueError(
+            f"Unsupported pooler name: {cfg.name}. "
+            f"Supported poolers: {sorted(SUPPORTED_POOLERS)}."
+        )
+
+    if name == "attn_pooler_v1":
+        if "hidden_dim" not in cfg or cfg.hidden_dim is None:
+            raise ValueError(
+                "Pooler 'attn_pooler_v1' requires a non-empty 'hidden_dim' field."
+            )
+
+        hidden_dim = int(cfg.hidden_dim)
+        if hidden_dim <= 0:
+            raise ValueError(f"hidden_dim must be > 0, got {hidden_dim}.")
+
+        output_dim = cfg.get("output_dim", None)
+        if output_dim is not None and int(output_dim) <= 0:
+            raise ValueError(f"output_dim must be > 0 when provided, got {output_dim}.")
+
+        dropout = float(cfg.get("dropout", 0.0))
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError(f"dropout must be in [0, 1), got {dropout}.")
+
+
+def _optional_int(value: object) -> int | None:
+    """Converts an optional config value to int."""
+    if value is None:
+        return None
+    return int(value)
