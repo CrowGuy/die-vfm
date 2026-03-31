@@ -64,6 +64,66 @@ pooler
 embedding
 ```
 
+## Pooling Strategies (PR-4)
+
+The pooling module aggregates patch/token-level features into a fixed-dimensional embedding.
+
+Currently supported poolers:
+
+### 1. Mean Pooler
+
+Averages valid token features.
+```yaml
+model:
+  pooler:
+    name: mean
+```
+- Simple and stable baseline
+- Ignores token importance differences
+
+### 2. Identity Pooler
+
+Returns raw token features without pooling.
+```yaml
+model:
+  pooler:
+    name: identity
+```
+- Mainly for debugging or downstream custom pooling
+
+### 3. AttnPoolerV1 (NEW)
+
+Attention-based pooling that learns to weight tokens.
+
+```yaml
+model:
+  pooler:
+    name: attn_pooler_v1
+    hidden_dim: 256
+    output_dim: null
+    dropout: 0.0
+    l2_norm: false
+    use_cls_token_as_query: false
+```
+
+**Key idea:**
+
+The model learns attention weights over tokens:
+
+`embedding = Σ (attention_i * token_i)`
+
+**Features:**
+
+- Learns token importance dynamically
+- Supports masking invalid tokens
+- Optionally uses CLS token as attention query
+- Returns attention weights (token_weights) for analysis
+
+**When to use:**
+
+- When token-level importance matters (e.g. defect localization)
+- When mean pooling is too coarse
+
 ## Repository Structure
 ```text
 die_vfm/
