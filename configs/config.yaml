@@ -3,6 +3,7 @@ defaults:
   - model/backbone: dummy
   - model/pooler: mean
   - dataset: dummy
+  - artifact: embedding
   - _self_
 
 project:
@@ -32,6 +33,10 @@ train:
 evaluation:
   run_linear_probe: false
   run_knn: false
+
+artifact:
+  embedding:
+    enabled: true
 
 dataloader:
   batch_size: 4

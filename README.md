@@ -91,7 +91,7 @@ model:
 ```
 - Mainly for debugging or downstream custom pooling
 
-### 3. AttnPoolerV1 (NEW)
+### 3. AttnPoolerV1
 
 Attention-based pooling that learns to weight tokens.
 
@@ -123,6 +123,162 @@ The model learns attention weights over tokens:
 
 - When token-level importance matters (e.g. defect localization)
 - When mean pooling is too coarse
+
+## Embedding Artifact (PR-5)
+### Overview
+
+PR-5 introduces an embedding artifact system that decouples model inference from downstream evaluation.
+
+Instead of running evaluators directly on dataloaders and models, we now:
+
+`Dataset → Model → Embedding Artifact → Evaluator`
+
+This enables:
+
+- reproducible evaluation
+- faster iteration (no repeated forward passes)
+- clean separation between model and evaluator
+
+### Artifact Structure
+
+Embedding artifacts are stored per run and per split:
+```text
+runs/<run_name>/
+  embeddings/
+    train/
+      manifest.yaml
+      part-00000.pt
+    val/
+      manifest.yaml
+      part-00000.pt
+    test/  # optional
+```
+Each split is **independent and self-contained**.
+
+### Shard Format (`.pt`)
+
+Each shard file contains:
+```python
+{
+    "embeddings": Tensor[N, D],
+    "labels": Tensor[N] | None,
+    "image_ids": list[str],
+    "metadata": list[dict],
+}
+```
+**Contract**
+- `embeddings[i] ↔ image_ids[i] ↔ metadata[i]`
+- `labels[i]` (if present) must align with `embeddings[i]`
+- `image_ids` must be unique within a split
+
+### Manifest Format
+
+Each split contains a `manifest.yaml`:
+```yaml
+artifact_type: embedding_split
+artifact_version: v1
+format: torch_pt
+
+split: train
+num_samples: 12345
+embedding_dim: 768
+dtype: float32
+has_labels: true
+num_shards: 1
+
+shards:
+  - file_name: part-00000.pt
+    num_samples: 12345
+```
+**Notes**
+- Manifest is strictly validated
+- Sum of shard samples must equal num_samples
+- Designed for future multi-shard support
+
+### Export API
+```python
+from die_vfm.artifacts import export_split_embeddings
+
+manifest = export_split_embeddings(
+    model=model,
+    dataloader=dataloader,
+    output_dir=split_dir,
+    split="train",
+    device="cpu",
+)
+```
+### Load API
+```python
+from die_vfm.artifacts import load_embedding_split
+
+artifact = load_embedding_split(split_dir)
+
+artifact.embeddings   # Tensor[N, D]
+artifact.labels       # Tensor[N] | None
+artifact.image_ids    # list[str]
+artifact.metadata     # list[dict]
+artifact.manifest
+```
+
+### Script Usage
+
+You can export embeddings using:
+```bash
+python scripts/export_embeddings.py \
+  run.run_name=my_run \
+  dataset=dummy \
+  model/backbone=dummy \
+  model/pooler=mean
+```
+Output will be written to:
+```bash
+runs/my_run/embeddings/
+```
+
+### Config
+
+Embedding export is controlled by:
+```yaml
+artifact:
+  embedding:
+    enabled: true
+    output_subdir: embeddings
+    export_splits: [train, val]
+    include_test_split: false
+```
+
+### Design Constraints
+
+This artifact system enforces:
+
+- Evaluators MUST consume artifacts (not dataloaders)
+- Artifacts must be split-based
+- Artifacts must be loadable without model code
+- Alignment between embeddings and metadata must be preserved
+
+### M1 Scope (PR-5)
+
+Implemented:
+
+- single-shard .pt format
+- manifest-based versioning
+- export + load APIs
+- strict validation
+- Hydra config integration
+- export script
+
+Not yet implemented:
+
+- multi-shard export
+- distributed export
+- checkpoint/resume
+- memory-mapped loading
+
+Next Steps
+- PR-6: Linear Probe Evaluator (consumes artifact)
+- PR-7: kNN Evaluator
+- PR-8: checkpoint / resume support
+- PR-9: full pipeline orchestration
 
 ## Repository Structure
 ```text

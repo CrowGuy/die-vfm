@@ -1,0 +1,32 @@
+# @package artifact.embedding
+
+# Whether to enable embedding artifact export
+enabled: true
+
+# Subdirectory under run_dir
+# Final path: runs/<run_name>/<output_subdir>/<split>/
+output_subdir: embeddings
+
+# Which splits to export
+export_splits:
+  - train
+  - val
+
+# Optional test split (explicit flag to avoid silent behavior)
+include_test_split: false
+
+# Whether to store labels in artifact
+# If dataset has no labels, exporter will ignore automatically
+save_labels: true
+
+# Whether to store per-sample metadata
+save_metadata: true
+
+# Artifact version (for manifest)
+artifact_version: v1
+
+# Reserved for future sharding (M1 = disabled)
+# Options:
+#   null → single shard
+#   int  → max samples per shard (future)
+shard_size: null
