@@ -5,6 +5,8 @@ defaults:
   - dataset: dummy
   - artifact: embedding
   - evaluation: linear_probe
+  - evaluation/knn
+  - evaluation/centroid
   - _self_
 
 project:
@@ -34,6 +36,7 @@ train:
 evaluation:
   run_linear_probe: false
   run_knn: false
+  run_centroid: false
 
 artifact:
   embedding:

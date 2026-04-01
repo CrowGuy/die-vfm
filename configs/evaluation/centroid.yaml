@@ -1,36 +1,53 @@
-# Centroid / prototype classifier evaluation config
+# @package evaluation.centroid
 
-evaluation:
-  centroid:
-    input:
-      # Path to train embedding artifact directory
-      train_split_dir: outputs/embeddings/train
+# -----------------------------------------------------------------------------
+# Enable / disable
+# -----------------------------------------------------------------------------
+enabled: true
 
-      # Path to validation embedding artifact directory
-      val_split_dir: outputs/embeddings/val
 
-      # Whether to L2-normalize embeddings when loading
-      normalize_embeddings: false
+# -----------------------------------------------------------------------------
+# Input: embedding artifacts
+# -----------------------------------------------------------------------------
+input:
+  # Required: directory containing train split embedding artifacts
+  train_split_dir: null
 
-      # torch.load map_location
-      map_location: cpu
+  # Required: directory containing val split embedding artifacts
+  val_split_dir: null
 
-    output:
-      # Directory to write evaluation results
-      output_dir: outputs/eval/centroid_run_001
+  # Whether to L2-normalize embeddings before evaluation
+  normalize_embeddings: false
 
-      # Whether to save predictions.pt
-      save_predictions: true
+  # torch.load map_location
+  map_location: cpu
 
-    evaluator:
-      # Similarity metric: "cosine" or "l2"
-      metric: cosine
 
-      # Batch size for query evaluation
-      batch_size: 1024
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output:
+  # Required: output directory for evaluation artifacts
+  output_dir: null
 
-      # Device for evaluation ("cpu" or "cuda")
-      device: cpu
+  # Whether to write predictions.pt
+  save_predictions: true
 
-      # Top-k metrics to compute
-      topk: [1, 5]
+
+# -----------------------------------------------------------------------------
+# Evaluator (centroid-specific)
+# -----------------------------------------------------------------------------
+evaluator:
+  # Distance / similarity metric
+  # Supported: cosine, l2
+  metric: cosine
+
+  # Query batch size (for memory control)
+  batch_size: 1024
+
+  # Device for computation
+  device: cpu
+
+  # Top-k metrics to report
+  # Must be <= num_classes
+  topk: [1, 5]
