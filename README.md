@@ -257,6 +257,67 @@ This artifact system enforces:
 - Alignment between embeddings and metadata must be preserved
 
 ---
+## End-to-End Evaluation Workflow
+
+All evaluators (linear probe, kNN, centroid) follow a **two-stage pipeline**:
+
+```text
+Dataset → Model → Embedding Artifact → Evaluator
+```
+
+### Step 1: Export embeddings (PR-5)
+```bash
+python scripts/export_embeddings.py \
+  run.run_name=demo \
+  dataset=dummy \
+  model/backbone=dummy \
+  model/pooler=mean
+```
+---
+This produces:
+```text
+runs/demo/embeddings/
+  train/
+    manifest.yaml
+    part-00000.pt
+  val/
+    manifest.yaml
+    part-00000.pt
+```
+---
+### Step 2: Run evaluator (PR-6 / PR-7 / PR-8)
+
+Example (centroid):
+
+```bash
+python scripts/run_centroid.py \
+  evaluation.centroid.enabled=true \
+  evaluation.centroid.input.train_split_dir=runs/demo/embeddings/train \
+  evaluation.centroid.input.val_split_dir=runs/demo/embeddings/val \
+  evaluation.centroid.output.output_dir=runs/demo/eval/centroid
+```
+---
+
+All evaluators operate on embedding artifacts defined in PR-5.
+
+The artifact format is:
+
+```text
+<split>/
+  manifest.yaml
+  part-00000.pt
+```
+Each shard contains:
+
+{
+  "embeddings": Tensor[N, D],
+  "labels": Tensor[N] | None,
+  "image_ids": list[str],
+  "metadata": list[dict],
+}
+
+---
+
 ## Linear Probe Evaluator (PR-6)
 
 This PR introduces an **artifact-driven linear probe evaluator** that trains a linear classifier on embedding artifacts and evaluates on validation embeddings.
@@ -472,21 +533,23 @@ python scripts/export_embeddings.py ...
 ```
 You should have:
 ```text
-artifacts/
+runs/<run_name>/embeddings/
   train/
-    embeddings.pt
-    metadata.yaml
+    manifest.yaml
+    part-00000.pt
   val/
-    embeddings.pt
-    metadata.yaml
+    manifest.yaml
+    part-00000.pt
 ```
+Each split follows the embedding artifact contract defined in PR-5.
+
 ---
 **2. Run kNN evaluation**
 ```bash
 python scripts/run_knn.py \
-  evaluation.knn.input.train_split_dir=artifacts/train \
-  evaluation.knn.input.val_split_dir=artifacts/val \
-  evaluation.knn.output.output_dir=outputs/knn_eval
+  evaluation.knn.input.train_split_dir=runs/<run_name>/embeddings/train \
+  evaluation.knn.input.val_split_dir=runs/<run_name>/embeddings/val \
+  evaluation.knn.output.output_dir=runs/<run_name>/evaluations/knn
 ```
 ---
 ### Outputs
@@ -635,24 +698,44 @@ val embeddings   ──► similarity to prototypes ──► predictions
 
 You should already have embedding artifacts from the pipeline:
 ```text
-outputs/
-  embeddings/
-    train/
-    val/
+outputs/<run_name>/embeddings/
+  train/
+    manifest.yaml
+    part-00000.pt
+  val/
+    manifest.yaml
+    part-00000.pt
 ```
-Each split directory typically contains:
-```text
-embeddings.pt
-labels.pt
-metadata.yaml
+Generate embeddings if not already done:
+```bash
+python scripts/export_embeddings.py \
+  run.run_name=demo \
+  dataset=dummy \
+  model/backbone=dummy \
+  model/pooler=mean
 ```
 ---
+
 **2. Run centroid evaluation**
+Centroid evaluation is controlled by:
+
+```bash
+evaluation.centroid.enabled=true
+```
+
 ```bash
 python scripts/run_centroid.py \
-  evaluation.centroid.input.train_split_dir=outputs/embeddings/train \
-  evaluation.centroid.input.val_split_dir=outputs/embeddings/val \
-  evaluation.centroid.output.output_dir=outputs/eval/centroid_run
+  evaluation.centroid.enabled=true \
+  evaluation.centroid.input.train_split_dir=runs/demo/embeddings/train \
+  evaluation.centroid.input.val_split_dir=runs/demo/embeddings/val \
+  evaluation.centroid.output.output_dir=runs/demo/eval/centroid
+```
+---
+**Optional overrides**
+```bash
+evaluation.centroid.evaluator.metric=l2
+evaluation.centroid.evaluator.batch_size=512
+evaluation.centroid.evaluator.topk=[1]
 ```
 ---
 **3. Example config**
@@ -660,13 +743,13 @@ python scripts/run_centroid.py \
 evaluation:
   centroid:
     input:
-      train_split_dir: outputs/embeddings/train
-      val_split_dir: outputs/embeddings/val
+      train_split_dir: runs/<run_name>/embeddings/train
+      val_split_dir: runs/<run_name>/embeddings/val
       normalize_embeddings: false
       map_location: cpu
 
     output:
-      output_dir: outputs/eval/centroid_run
+      output_dir: runs/<run_name>/eval/centroid
       save_predictions: true
 
     evaluator:
@@ -776,7 +859,15 @@ Centroid evaluator provides:
 ✅ Minimal configuration
 ---
 
+## Evaluator Comparison
 
+| Evaluator     | Training Required | Complexity | Use Case                      |
+|--------------|------------------|------------|-------------------------------|
+| Linear Probe | Yes              | O(N)       | Learned classifier baseline   |
+| kNN          | No               | O(N)       | Local structure evaluation    |
+| Centroid     | No               | O(C)       | Global cluster structure      |
+
+---
 ## Repository Structure
 ```text
 die_vfm/
