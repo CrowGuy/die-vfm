@@ -602,6 +602,180 @@ Use kNN when you want:
 - Debugging embedding space structure
 
 ---
+## Centroid / Prototype Classifier Evaluator (PR-8)
+
+### Overview
+
+This PR introduces a centroid-based (prototype) classifier evaluator for embedding quality assessment.
+
+- Train split → used to build class prototypes (centroids)
+- Val split → used as query set
+- Fully artifact-driven (no dataloaders)
+- Compatible with existing evaluator framework
+
+Pipeline:
+```text
+train embeddings ──► class prototypes [C, D]
+val embeddings   ──► similarity to prototypes ──► predictions
+```
+---
+### Key Properties
+- One prototype per class (mean embedding)
+- Supports:
+    - cosine similarity
+    - L2 distance
+- Fast and memory-efficient baseline
+- Deterministic (no training / no randomness)
+- Output format aligned with:
+    - Linear Probe (PR-6)
+    - kNN (PR-7)
+---
+### Usage
+**1. Prepare embedding artifacts**
+
+You should already have embedding artifacts from the pipeline:
+```text
+outputs/
+  embeddings/
+    train/
+    val/
+```
+Each split directory typically contains:
+```text
+embeddings.pt
+labels.pt
+metadata.yaml
+```
+---
+**2. Run centroid evaluation**
+```bash
+python scripts/run_centroid.py \
+  evaluation.centroid.input.train_split_dir=outputs/embeddings/train \
+  evaluation.centroid.input.val_split_dir=outputs/embeddings/val \
+  evaluation.centroid.output.output_dir=outputs/eval/centroid_run
+```
+---
+**3. Example config**
+```yaml
+evaluation:
+  centroid:
+    input:
+      train_split_dir: outputs/embeddings/train
+      val_split_dir: outputs/embeddings/val
+      normalize_embeddings: false
+      map_location: cpu
+
+    output:
+      output_dir: outputs/eval/centroid_run
+      save_predictions: true
+
+    evaluator:
+      metric: cosine
+      batch_size: 1024
+      device: cpu
+      topk: [1, 5]
+```
+---
+### Output Artifacts
+
+After running, the following files will be generated:
+```text
+output_dir/
+  metrics.yaml
+  summary.yaml
+  config.yaml
+  predictions.pt
+```
+---
+**metrics.yaml**
+Stable metric output:
+```yaml
+evaluator_type: centroid
+evaluator_version: v1
+
+input:
+  train_split: train
+  val_split: val
+  train_num_samples: 50000
+  val_num_samples: 10000
+  embedding_dim: 768
+  num_classes: 10
+
+prototype:
+  num_prototypes: 10
+  prototype_dim: 768
+
+val:
+  accuracy: 0.85
+  top1_accuracy: 0.85
+  top5_accuracy: 0.98
+```
+---
+**summary.yaml**
+
+Compact run summary:
+```yaml
+status: success
+evaluator: centroid
+train_split: train
+val_split: val
+num_prototypes: 10
+val_accuracy: 0.85
+```
+---
+**predictions.pt**
+
+Saved as a PyTorch dictionary:
+```yaml
+{
+    "image_ids": [...],
+    "labels": Tensor[N],
+    "pred_labels": Tensor[N],
+    "logits": Tensor[N, C],
+
+    # Prototype information
+    "prototype_labels": Tensor[C],
+    "prototypes": Tensor[C, D],
+}
+```
+---
+### Design Notes
+**Why centroid?**
+- Provides a strong, cheap baseline
+- Much faster than kNN (O(C) vs O(N))
+- Easy to interpret
+- No hyperparameter tuning required
+---
+## Relationship to kNN
+| Evaluator | Reference set     | Complexity | Notes           |
+| --------- | ----------------- | ---------- | --------------- |
+| kNN       | all train samples | O(N)       | more flexible   |
+| centroid  | class means       | O(C)       | faster, simpler |
+
+---
+### Constraints (unchanged)
+- Evaluators consume embedding artifacts only
+- No dataloaders
+- Model / pooler contract is frozen
+- Artifact format is stable
+---
+### Future Extensions (not in PR-8)
+- Multi-prototype per class
+- Class-conditional covariance / Mahalanobis distance
+- Prototype refinement
+- Temperature scaling / calibration
+- Open-set recognition
+---
+### Summary
+
+Centroid evaluator provides:
+
+✅ Fast baseline
+✅ Fully artifact-driven evaluation
+✅ Consistent interface with existing evaluators
+✅ Minimal configuration
+---
+
 
 ## Repository Structure
 ```text

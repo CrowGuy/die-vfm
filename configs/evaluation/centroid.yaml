@@ -1,0 +1,36 @@
+# Centroid / prototype classifier evaluation config
+
+evaluation:
+  centroid:
+    input:
+      # Path to train embedding artifact directory
+      train_split_dir: outputs/embeddings/train
+
+      # Path to validation embedding artifact directory
+      val_split_dir: outputs/embeddings/val
+
+      # Whether to L2-normalize embeddings when loading
+      normalize_embeddings: false
+
+      # torch.load map_location
+      map_location: cpu
+
+    output:
+      # Directory to write evaluation results
+      output_dir: outputs/eval/centroid_run_001
+
+      # Whether to save predictions.pt
+      save_predictions: true
+
+    evaluator:
+      # Similarity metric: "cosine" or "l2"
+      metric: cosine
+
+      # Batch size for query evaluation
+      batch_size: 1024
+
+      # Device for evaluation ("cpu" or "cuda")
+      device: cpu
+
+      # Top-k metrics to compute
+      topk: [1, 5]

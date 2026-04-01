@@ -9,9 +9,10 @@ from typing import Any
 import torch
 import yaml
 
+from die_vfm.evaluator.centroid_evaluator import CentroidEvaluationOutput
 from die_vfm.evaluator.io import LinearProbeDataBundle
-from die_vfm.evaluator.linear_probe_trainer import LinearProbeTrainingResult
 from die_vfm.evaluator.knn_evaluator import KnnEvaluationOutput
+from die_vfm.evaluator.linear_probe_trainer import LinearProbeTrainingResult
 
 
 def write_linear_probe_outputs(
@@ -25,19 +26,18 @@ def write_linear_probe_outputs(
     """Writes linear probe evaluation outputs to disk.
 
     Args:
-        output_dir: Output directory for evaluator artifacts.
-        result: Training result returned by train_linear_probe().
-        bundle: Prepared train/val bundle used for evaluation.
-        config: Config object or dict used for this evaluator run.
-        save_predictions: Whether to write predictions.pt.
-        save_history: Whether to write history.yaml.
+      output_dir: Output directory for evaluator artifacts.
+      result: Training result returned by train_linear_probe().
+      bundle: Prepared train/val bundle used for evaluation.
+      config: Config object or dict used for this evaluator run.
+      save_predictions: Whether to write predictions.pt.
+      save_history: Whether to write history.yaml.
 
     Returns:
-        Mapping from artifact logical names to written paths.
+      Mapping from artifact logical names to written paths.
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-
     written_paths: dict[str, Path] = {}
 
     metrics_payload = build_linear_probe_metrics_payload(
@@ -79,6 +79,7 @@ def write_linear_probe_outputs(
 
     return written_paths
 
+
 def write_knn_outputs(
     output_dir: str | Path,
     result: KnnEvaluationOutput,
@@ -100,7 +101,6 @@ def write_knn_outputs(
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-
     written_paths: dict[str, Path] = {}
 
     metrics_payload = build_knn_metrics_payload(
@@ -137,6 +137,63 @@ def write_knn_outputs(
     return written_paths
 
 
+def write_centroid_outputs(
+    output_dir: str | Path,
+    result: CentroidEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+    config: Any,
+    save_predictions: bool = True,
+) -> dict[str, Path]:
+    """Writes centroid evaluation outputs to disk.
+
+    Args:
+      output_dir: Output directory for evaluator artifacts.
+      result: Evaluation result returned by evaluate_centroid().
+      bundle: Prepared train/val bundle used for evaluation.
+      config: Config object or dict used for this evaluator run.
+      save_predictions: Whether to write predictions.pt.
+
+    Returns:
+      Mapping from artifact logical names to written paths.
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    written_paths: dict[str, Path] = {}
+
+    metrics_payload = build_centroid_metrics_payload(
+        result=result,
+        bundle=bundle,
+    )
+    metrics_path = output_path / "metrics.yaml"
+    _write_yaml(metrics_path, metrics_payload)
+    written_paths["metrics"] = metrics_path
+
+    summary_payload = build_centroid_summary_payload(
+        output_dir=output_path,
+        result=result,
+        bundle=bundle,
+    )
+    summary_path = output_path / "summary.yaml"
+    _write_yaml(summary_path, summary_payload)
+    written_paths["summary"] = summary_path
+
+    config_payload = _to_serializable_config(config)
+    config_path = output_path / "config.yaml"
+    _write_yaml(config_path, config_payload)
+    written_paths["config"] = config_path
+
+    if save_predictions:
+        predictions_payload = build_centroid_predictions_payload(
+            result=result,
+            bundle=bundle,
+        )
+        predictions_path = output_path / "predictions.pt"
+        torch.save(predictions_payload, predictions_path)
+        written_paths["predictions"] = predictions_path
+
+    return written_paths
+
+
 def build_knn_metrics_payload(
     result: KnnEvaluationOutput,
     bundle: LinearProbeDataBundle,
@@ -156,10 +213,8 @@ def build_knn_metrics_payload(
         },
         "val": {},
     }
-
     for key, value in result.metrics.items():
         payload["val"][key] = float(value)
-
     return payload
 
 
@@ -174,7 +229,6 @@ def build_knn_predictions_payload(
             f"Got image_ids={len(result.image_ids)}, "
             f"val_num_samples={bundle.val.num_samples}."
         )
-
     return {
         "split": bundle.val.split_name,
         "image_ids": list(result.image_ids),
@@ -206,12 +260,94 @@ def build_knn_summary_payload(
         "val_accuracy": float(result.metrics["accuracy"]),
         "output_dir": str(Path(output_dir)),
     }
-
     if "top1_accuracy" in result.metrics:
         summary["top1_accuracy"] = float(result.metrics["top1_accuracy"])
     if "top5_accuracy" in result.metrics:
         summary["top5_accuracy"] = float(result.metrics["top5_accuracy"])
+    return summary
 
+
+def build_centroid_metrics_payload(
+    result: CentroidEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the stable metrics.yaml payload for centroid evaluation."""
+    payload: dict[str, Any] = {
+        "evaluator_type": "centroid",
+        "evaluator_version": "v1",
+        "input": {
+            "train_split": bundle.train.split_name,
+            "val_split": bundle.val.split_name,
+            "train_num_samples": bundle.train.num_samples,
+            "val_num_samples": bundle.val.num_samples,
+            "embedding_dim": bundle.embedding_dim,
+            "num_classes": bundle.num_classes,
+            "class_ids": list(bundle.class_ids),
+        },
+        "prototype": {
+            "num_prototypes": int(result.prototypes.shape[0]),
+            "prototype_dim": int(result.prototypes.shape[1]),
+        },
+        "val": {},
+    }
+    for key, value in result.metrics.items():
+        payload["val"][key] = float(value)
+    return payload
+
+
+def build_centroid_predictions_payload(
+    result: CentroidEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the predictions.pt payload for centroid evaluation."""
+    if len(result.image_ids) != bundle.val.num_samples:
+        raise ValueError(
+            "Prediction image_ids length must match validation sample count. "
+            f"Got image_ids={len(result.image_ids)}, "
+            f"val_num_samples={bundle.val.num_samples}."
+        )
+    if int(result.prototypes.shape[0]) != bundle.num_classes:
+        raise ValueError(
+            "Prototype count must match bundle.num_classes. "
+            f"Got num_prototypes={int(result.prototypes.shape[0])}, "
+            f"num_classes={bundle.num_classes}."
+        )
+
+    return {
+        "split": bundle.val.split_name,
+        "image_ids": list(result.image_ids),
+        "labels": result.labels.clone(),
+        "pred_labels": result.predictions.clone(),
+        "logits": result.logits.clone(),
+        "class_ids": torch.tensor(bundle.class_ids, dtype=torch.long),
+        "prototype_labels": result.prototype_labels.clone(),
+        "prototypes": result.prototypes.clone(),
+    }
+
+
+def build_centroid_summary_payload(
+    output_dir: str | Path,
+    result: CentroidEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the summary.yaml payload for centroid evaluation."""
+    summary = {
+        "status": "success",
+        "evaluator": "centroid",
+        "train_split": bundle.train.split_name,
+        "val_split": bundle.val.split_name,
+        "train_num_samples": bundle.train.num_samples,
+        "val_num_samples": bundle.val.num_samples,
+        "embedding_dim": bundle.embedding_dim,
+        "num_classes": bundle.num_classes,
+        "num_prototypes": int(result.prototypes.shape[0]),
+        "val_accuracy": float(result.metrics["accuracy"]),
+        "output_dir": str(Path(output_dir)),
+    }
+    if "top1_accuracy" in result.metrics:
+        summary["top1_accuracy"] = float(result.metrics["top1_accuracy"])
+    if "top5_accuracy" in result.metrics:
+        summary["top5_accuracy"] = float(result.metrics["top5_accuracy"])
     return summary
 
 
@@ -268,14 +404,12 @@ def build_linear_probe_predictions_payload(
 ) -> dict[str, Any]:
     """Builds the predictions.pt payload."""
     val_output = result.val_output
-
     if len(val_output.image_ids) != bundle.val.num_samples:
         raise ValueError(
             "Prediction image_ids length must match validation sample count. "
             f"Got image_ids={len(val_output.image_ids)}, "
             f"val_num_samples={bundle.val.num_samples}."
         )
-
     return {
         "split": bundle.val.split_name,
         "image_ids": list(val_output.image_ids),
@@ -323,22 +457,17 @@ def _to_serializable_config(config: Any) -> dict[str, Any]:
     """Converts a config object into a YAML-serializable dict."""
     if config is None:
         return {}
-
     if isinstance(config, dict):
         return _to_builtin_types(config)
-
     if is_dataclass(config):
         return _to_builtin_types(asdict(config))
-
     if hasattr(config, "items"):
         try:
             return _to_builtin_types(dict(config))
         except (TypeError, ValueError):
             pass
-
     if hasattr(config, "__dict__"):
         return _to_builtin_types(vars(config))
-
     raise TypeError(
         "config must be serializable from dict, dataclass, or __dict__. "
         f"Got type={type(config)!r}."
@@ -348,23 +477,20 @@ def _to_serializable_config(config: Any) -> dict[str, Any]:
 def _to_builtin_types(value: Any) -> Any:
     """Recursively converts values into YAML-friendly builtins."""
     if isinstance(value, dict):
-        return {str(key): _to_builtin_types(subvalue) for key, subvalue in value.items()}
-
+        return {
+            str(key): _to_builtin_types(subvalue)
+            for key, subvalue in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return [_to_builtin_types(item) for item in value]
-
     if isinstance(value, Path):
         return str(value)
-
     if isinstance(value, torch.device):
         return str(value)
-
     if isinstance(value, torch.dtype):
         return str(value).replace("torch.", "")
-
     if isinstance(value, torch.Tensor):
         if value.ndim == 0:
             return value.item()
         return value.tolist()
-
     return value
