@@ -4,6 +4,7 @@ defaults:
   - model/pooler: mean
   - dataset: dummy
   - artifact: embedding
+  - evaluation: linear_probe
   - _self_
 
 project:

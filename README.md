@@ -256,29 +256,183 @@ This artifact system enforces:
 - Artifacts must be loadable without model code
 - Alignment between embeddings and metadata must be preserved
 
-### M1 Scope (PR-5)
+---
+## Linear Probe Evaluator (PR-6)
 
-Implemented:
+This PR introduces an **artifact-driven linear probe evaluator** that trains a linear classifier on embedding artifacts and evaluates on validation embeddings.
 
-- single-shard .pt format
-- manifest-based versioning
-- export + load APIs
-- strict validation
-- Hydra config integration
-- export script
+### Key Principles
 
-Not yet implemented:
+- Evaluators **consume embedding artifacts only**
+- Evaluators **do not depend on dataloaders or models**
+- Fully **decoupled from training pipeline**
+- **Reproducible** and **configurable via Hydra**
 
-- multi-shard export
-- distributed export
-- checkpoint/resume
-- memory-mapped loading
+---
 
-Next Steps
-- PR-6: Linear Probe Evaluator (consumes artifact)
-- PR-7: kNN Evaluator
-- PR-8: checkpoint / resume support
-- PR-9: full pipeline orchestration
+## Pipeline
+```text
+Embedding Artifacts (PR-5)
+├── train/
+└── val/
+↓
+Linear Probe Evaluator (PR-6)
+↓
+Evaluation Outputs
+```
+---
+
+## Input: Embedding Artifacts
+
+Expected directory structure:
+```text
+runs/<run_name>/embeddings/
+├── train/
+│ ├── manifest.yaml
+│ └── part-00000.pt
+└── val/
+├── manifest.yaml
+└── part-00000.pt
+```
+
+Each shard (`.pt`) contains:
+
+```python
+{
+  "embeddings": Tensor[N, D],
+  "labels": Tensor[N],
+  "image_ids": list[str],
+  "metadata": list[dict],
+}
+```
+---
+Output: Evaluation Artifacts
+
+The evaluator writes results to:
+
+```text
+<output_dir>/
+  ├── metrics.yaml
+  ├── summary.yaml
+  ├── config.yaml
+  ├── history.yaml          # optional
+  └── predictions.pt        # optional
+```
+
+### `metrics.yaml`
+```yaml
+evaluator_type: linear_probe
+evaluator_version: v1
+
+input:
+  train_split: train
+  val_split: val
+  train_num_samples: ...
+  val_num_samples: ...
+  embedding_dim: ...
+  num_classes: ...
+  class_ids: [...]
+
+best_epoch: ...
+
+train:
+  loss: ...
+  accuracy: ...
+
+val:
+  loss: ...
+  accuracy: ...
+```
+
+### `predictions.pt`
+```python
+{
+  "split": "val",
+  "image_ids": [...],
+  "labels": Tensor[N],
+  "pred_labels": Tensor[N],
+  "logits": Tensor[N, C],
+  "class_ids": Tensor[C],
+}
+```
+
+### Usage
+**Run via CLI**
+```bash
+python scripts/run_linear_probe.py \
+  evaluation.run_linear_probe=true \
+  evaluation.linear_probe.input.train_split_dir=runs/<run_name>/embeddings/train \
+  evaluation.linear_probe.input.val_split_dir=runs/<run_name>/embeddings/val \
+  evaluation.linear_probe.output.output_dir=runs/<run_name>/evaluations/linear_probe
+```
+**Common overrides**
+```bash
+evaluation.linear_probe.trainer.optimizer_name=adamw
+evaluation.linear_probe.trainer.learning_rate=0.05
+evaluation.linear_probe.trainer.batch_size=256
+evaluation.linear_probe.trainer.num_epochs=50
+```
+
+### Config Structure
+```text
+evaluation.linear_probe
+  ├── input
+  ├── output
+  ├── model
+  └── trainer
+```
+**Example**
+```yaml
+evaluation:
+  linear_probe:
+    input:
+      train_split_dir: ...
+      val_split_dir: ...
+      normalize_embeddings: false
+
+    output:
+      output_dir: ...
+      save_predictions: true
+      save_history: true
+
+    model:
+      bias: true
+
+    trainer:
+      batch_size: 256
+      num_epochs: 50
+      learning_rate: 0.01
+      optimizer_name: sgd
+      selection_metric: val_accuracy
+```
+---
+### API
+**Run programmatically**
+```python
+from die_vfm.evaluator import run_linear_probe, build_linear_probe_run_config
+
+config = build_linear_probe_run_config(
+    train_split_dir="...",
+    val_split_dir="...",
+    output_dir="...",
+)
+
+result = run_linear_probe(config)
+
+print(result.val_metrics)
+```
+---
+### Design Notes
+- No DataLoader usage
+    - batching is implemented via tensor slicing
+- Strict artifact alignment
+    - embeddings ↔ labels ↔ image_ids
+- Model-free evaluation
+    - artifacts are sufficient for evaluation
+- Minimal M1 implementation
+    - single-shard only
+    - single-device only
+---
 
 ## Repository Structure
 ```text

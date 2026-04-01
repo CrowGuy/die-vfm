@@ -1,0 +1,47 @@
+# @package evaluation.linear_probe
+
+enabled: true
+
+input:
+  # 這兩個通常由 script 或上層 config 注入
+  train_split_dir: null
+  val_split_dir: null
+
+  # 是否對 embedding 做 L2 normalize
+  normalize_embeddings: false
+
+  # torch.load map_location
+  map_location: cpu
+
+
+output:
+  # evaluator 輸出目錄（通常會被 script 拼 run_name）
+  output_dir: null
+
+  # 是否寫出 predictions.pt
+  save_predictions: true
+
+  # 是否寫出 history.yaml
+  save_history: true
+
+
+model:
+  # Linear probe 是否帶 bias
+  bias: true
+
+
+trainer:
+  batch_size: 256
+  num_epochs: 50
+
+  learning_rate: 0.01
+  weight_decay: 0.0
+
+  optimizer_name: sgd   # sgd | adamw
+  momentum: 0.9         # only used for sgd
+
+  device: cpu
+  seed: 0
+
+  # val_accuracy | val_loss
+  selection_metric: val_accuracy

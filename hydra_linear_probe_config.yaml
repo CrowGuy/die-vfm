@@ -1,0 +1,96 @@
+experiment:
+  name: debug_model_smoke
+  runtime:
+    seed: 42
+    device: cpu
+  data:
+    batch_size: 4
+    num_workers: 0
+  model:
+    return_debug_outputs: true
+model:
+  backbone:
+    name: dummy
+    image_size: 224
+    patch_size: 16
+    in_channels: 3
+    embed_dim: 192
+  pooler:
+    name: mean
+    l2_norm: false
+dataset:
+  name: dummy
+  image_size:
+  - 224
+  - 224
+  num_channels: 3
+  num_classes: 5
+  train_size: 16
+  val_size: 8
+  label_offset: 0
+  split_seed:
+    train: 101
+    val: 202
+artifact:
+  embedding:
+    enabled: true
+    output_subdir: embeddings
+    export_splits:
+    - train
+    - val
+    include_test_split: false
+    save_labels: true
+    save_metadata: true
+    artifact_version: v1
+    shard_size: null
+evaluation:
+  linear_probe:
+    enabled: true
+    input:
+      train_split_dir: /tmp/pytest-of-randy/pytest-17/test_run_linear_probe_script_s0/embeddings/train
+      val_split_dir: /tmp/pytest-of-randy/pytest-17/test_run_linear_probe_script_s0/embeddings/val
+      normalize_embeddings: false
+      map_location: cpu
+    output:
+      output_dir: /tmp/pytest-of-randy/pytest-17/test_run_linear_probe_script_s0/outputs
+      save_predictions: false
+      save_history: false
+    model:
+      bias: true
+    trainer:
+      batch_size: 4
+      num_epochs: 10
+      learning_rate: 0.05
+      weight_decay: 0.0
+      optimizer_name: adamw
+      momentum: 0.9
+      device: cpu
+      seed: 1
+      selection_metric: val_accuracy
+  run_linear_probe: true
+  run_knn: false
+project:
+  name: die_vfm
+run:
+  output_root: runs
+  run_name: null
+  save_config_snapshot: true
+system:
+  seed: 42
+  device: cpu
+  num_workers: 4
+train:
+  max_epochs: 1
+  log_every_n_steps: 10
+  run_dataloader_smoke_test: true
+  run_model_forward_smoke_test: true
+  resume:
+    enabled: false
+    mode: full_resume
+    checkpoint_path: null
+    auto_resume_latest: false
+dataloader:
+  batch_size: 4
+  drop_last: false
+  pin_memory: false
+  persistent_workers: false
