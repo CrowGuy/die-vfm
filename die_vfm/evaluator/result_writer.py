@@ -11,6 +11,7 @@ import yaml
 
 from die_vfm.evaluator.io import LinearProbeDataBundle
 from die_vfm.evaluator.linear_probe_trainer import LinearProbeTrainingResult
+from die_vfm.evaluator.knn_evaluator import KnnEvaluationOutput
 
 
 def write_linear_probe_outputs(
@@ -77,6 +78,141 @@ def write_linear_probe_outputs(
         written_paths["predictions"] = predictions_path
 
     return written_paths
+
+def write_knn_outputs(
+    output_dir: str | Path,
+    result: KnnEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+    config: Any,
+    save_predictions: bool = True,
+) -> dict[str, Path]:
+    """Writes kNN evaluation outputs to disk.
+
+    Args:
+      output_dir: Output directory for evaluator artifacts.
+      result: Evaluation result returned by evaluate_knn().
+      bundle: Prepared train/val bundle used for evaluation.
+      config: Config object or dict used for this evaluator run.
+      save_predictions: Whether to write predictions.pt.
+
+    Returns:
+      Mapping from artifact logical names to written paths.
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    written_paths: dict[str, Path] = {}
+
+    metrics_payload = build_knn_metrics_payload(
+        result=result,
+        bundle=bundle,
+    )
+    metrics_path = output_path / "metrics.yaml"
+    _write_yaml(metrics_path, metrics_payload)
+    written_paths["metrics"] = metrics_path
+
+    summary_payload = build_knn_summary_payload(
+        output_dir=output_path,
+        result=result,
+        bundle=bundle,
+    )
+    summary_path = output_path / "summary.yaml"
+    _write_yaml(summary_path, summary_payload)
+    written_paths["summary"] = summary_path
+
+    config_payload = _to_serializable_config(config)
+    config_path = output_path / "config.yaml"
+    _write_yaml(config_path, config_payload)
+    written_paths["config"] = config_path
+
+    if save_predictions:
+        predictions_payload = build_knn_predictions_payload(
+            result=result,
+            bundle=bundle,
+        )
+        predictions_path = output_path / "predictions.pt"
+        torch.save(predictions_payload, predictions_path)
+        written_paths["predictions"] = predictions_path
+
+    return written_paths
+
+
+def build_knn_metrics_payload(
+    result: KnnEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the stable metrics.yaml payload for kNN."""
+    payload: dict[str, Any] = {
+        "evaluator_type": "knn",
+        "evaluator_version": "v1",
+        "input": {
+            "train_split": bundle.train.split_name,
+            "val_split": bundle.val.split_name,
+            "train_num_samples": bundle.train.num_samples,
+            "val_num_samples": bundle.val.num_samples,
+            "embedding_dim": bundle.embedding_dim,
+            "num_classes": bundle.num_classes,
+            "class_ids": list(bundle.class_ids),
+        },
+        "val": {},
+    }
+
+    for key, value in result.metrics.items():
+        payload["val"][key] = float(value)
+
+    return payload
+
+
+def build_knn_predictions_payload(
+    result: KnnEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the predictions.pt payload for kNN."""
+    if len(result.image_ids) != bundle.val.num_samples:
+        raise ValueError(
+            "Prediction image_ids length must match validation sample count. "
+            f"Got image_ids={len(result.image_ids)}, "
+            f"val_num_samples={bundle.val.num_samples}."
+        )
+
+    return {
+        "split": bundle.val.split_name,
+        "image_ids": list(result.image_ids),
+        "labels": result.labels.clone(),
+        "pred_labels": result.predictions.clone(),
+        "logits": result.logits.clone(),
+        "class_ids": torch.tensor(bundle.class_ids, dtype=torch.long),
+        "neighbor_indices": result.neighbor_indices.clone(),
+        "neighbor_labels": result.neighbor_labels.clone(),
+        "neighbor_scores": result.neighbor_scores.clone(),
+    }
+
+
+def build_knn_summary_payload(
+    output_dir: str | Path,
+    result: KnnEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the summary.yaml payload for kNN."""
+    summary = {
+        "status": "success",
+        "evaluator": "knn",
+        "train_split": bundle.train.split_name,
+        "val_split": bundle.val.split_name,
+        "train_num_samples": bundle.train.num_samples,
+        "val_num_samples": bundle.val.num_samples,
+        "embedding_dim": bundle.embedding_dim,
+        "num_classes": bundle.num_classes,
+        "val_accuracy": float(result.metrics["accuracy"]),
+        "output_dir": str(Path(output_dir)),
+    }
+
+    if "top1_accuracy" in result.metrics:
+        summary["top1_accuracy"] = float(result.metrics["top1_accuracy"])
+    if "top5_accuracy" in result.metrics:
+        summary["top5_accuracy"] = float(result.metrics["top5_accuracy"])
+
+    return summary
 
 
 def build_linear_probe_metrics_payload(

@@ -434,6 +434,175 @@ print(result.val_metrics)
     - single-device only
 ---
 
+## kNN Evaluator (PR-7)
+
+The kNN evaluator provides a training-free baseline to assess embedding quality using nearest neighbor classification.
+
+- `Reference set`: train split embeddings
+- `Query set`: val split embeddings
+- `Input`: embedding artifacts (no dataloaders)
+- `Output`: metrics + predictions + neighbor metadata
+
+This evaluator is fully artifact-driven and follows the same contract as the linear probe evaluator.
+
+### Pipeline
+```text
+Embedding Artifacts (train / val)
+        ↓
+kNN Evaluator
+        ↓
+Predictions + Metrics
+```
+---
+### Key Properties
+- No training required
+- Deterministic evaluation
+- Supports cosine and L2 distance
+- Supports uniform and distance-weighted voting
+- Fully Hydra-configurable
+- Compatible with existing artifact format
+
+---
+### Usage
+**1. Prepare embedding artifacts**
+
+Make sure you already exported embeddings:
+```bash
+python scripts/export_embeddings.py ...
+```
+You should have:
+```text
+artifacts/
+  train/
+    embeddings.pt
+    metadata.yaml
+  val/
+    embeddings.pt
+    metadata.yaml
+```
+---
+**2. Run kNN evaluation**
+```bash
+python scripts/run_knn.py \
+  evaluation.knn.input.train_split_dir=artifacts/train \
+  evaluation.knn.input.val_split_dir=artifacts/val \
+  evaluation.knn.output.output_dir=outputs/knn_eval
+```
+---
+### Outputs
+
+The evaluator writes the following artifacts:
+
+**`metrics.yaml`**
+```yaml
+evaluator_type: knn
+evaluator_version: v1
+
+input:
+  train_split: train
+  val_split: val
+  train_num_samples: 10240
+  val_num_samples: 2048
+  embedding_dim: 384
+  num_classes: 12
+  class_ids: [0, 1, ...]
+
+val:
+  accuracy: 0.91
+  top1_accuracy: 0.91
+  top5_accuracy: 0.98
+```
+---
+
+**`summary.yaml`**
+```yaml
+status: success
+evaluator: knn
+train_split: train
+val_split: val
+val_accuracy: 0.91
+output_dir: outputs/knn_eval
+```
+---
+**`config.yaml`**
+
+Resolved run configuration used for this evaluation.
+
+---
+
+**`predictions.pt`**
+```python
+{
+  "split": "val",
+  "image_ids": [...],
+  "labels": Tensor[N],
+  "pred_labels": Tensor[N],
+  "logits": Tensor[N, C],
+  "class_ids": Tensor[C],
+
+  # kNN-specific
+  "neighbor_indices": Tensor[N, K],
+  "neighbor_labels": Tensor[N, K],
+  "neighbor_scores": Tensor[N, K],
+}
+```
+---
+
+### Configuration Reference
+`Input`
+| Field                  | Description                        |
+| ---------------------- | ---------------------------------- |
+| `train_split_dir`      | Path to train embedding artifacts  |
+| `val_split_dir`        | Path to val embedding artifacts    |
+| `normalize_embeddings` | Whether to L2 normalize embeddings |
+| `map_location`         | torch.load device                  |
+
+---
+
+`Output`
+| Field              | Description                       |
+| ------------------ | --------------------------------- |
+| `output_dir`       | Directory to write outputs        |
+| `save_predictions` | Whether to write `predictions.pt` |
+
+---
+
+`evaluator`
+| Field         | Description                 |
+| ------------- | --------------------------- |
+| `k`           | Number of nearest neighbors |
+| `metric`      | `cosine` or `l2`            |
+| `weighting`   | `uniform` or `distance`     |
+| `temperature` | Used for distance weighting |
+| `batch_size`  | Query batch size            |
+| `device`      | cpu / cuda                  |
+| `topk`        | Top-k metrics               |
+
+---
+### Notes
+- k must be ≤ number of train samples
+- topk must be ≤ number of classes
+- distance weighting uses softmax over neighbor scores
+- For cosine similarity, embeddings are normalized internally
+---
+### Comparison with Linear Probe
+| Aspect    | Linear Probe        | kNN                        |
+| --------- | ------------------- | -------------------------- |
+| Training  | Required            | Not required               |
+| Speed     | Slower              | Faster                     |
+| Stability | Depends on training | Deterministic              |
+| Use case  | Learned classifier  | Embedding quality baseline |
+
+---
+### When to use kNN
+Use kNN when you want:
+- Quick sanity check of embedding quality
+- Training-free evaluation
+- Baseline comparison with learned classifiers
+- Debugging embedding space structure
+
+---
+
 ## Repository Structure
 ```text
 die_vfm/
