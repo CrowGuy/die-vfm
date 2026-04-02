@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from die_vfm.datasets.base import DatasetAdapter, DatasetSample
+from die_vfm.datasets.cifar10_dataset import Cifar10DatasetAdapter
 from die_vfm.datasets.dummy_dataset import DummyDatasetAdapter
 
 
@@ -27,6 +28,9 @@ def build_dataset(cfg: Any, split: str) -> DatasetAdapter:
     if dataset_name == "dummy":
         return DummyDatasetAdapter.from_config(cfg.dataset, split=split)
 
+    if dataset_name == "cifar10":
+        return Cifar10DatasetAdapter.from_config(cfg.dataset, split=split)
+
     raise ValueError(f"Unsupported dataset name: {dataset_name}")
 
 
@@ -40,10 +44,10 @@ def collate_dataset_samples(
 
     Returns:
       A batch dictionary with the following keys:
-        - image: torch.Tensor with shape [B, C, H, W]
-        - label: torch.Tensor with shape [B] or None
-        - image_id: list[str]
-        - meta: list[dict]
+      - image: torch.Tensor with shape [B, C, H, W]
+      - label: torch.Tensor with shape [B] or None
+      - image_id: list[str]
+      - meta: list[dict]
 
     Raises:
       ValueError: If the input sample list is empty.
@@ -52,8 +56,8 @@ def collate_dataset_samples(
         raise ValueError("Cannot collate an empty sample list.")
 
     images = torch.stack([sample["image"] for sample in samples], dim=0)
-
     labels: List[Optional[int]] = [sample["label"] for sample in samples]
+
     if all(label is not None for label in labels):
         batch_labels: Optional[torch.Tensor] = torch.tensor(
             labels,
@@ -82,7 +86,6 @@ def build_dataloader(cfg: Any, split: str) -> DataLoader:
       A PyTorch dataloader instance.
     """
     dataset = build_dataset(cfg, split=split)
-
     shuffle = split == "train"
     num_workers = int(cfg.system.num_workers)
     persistent_workers = bool(cfg.dataloader.persistent_workers)

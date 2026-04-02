@@ -1,0 +1,9 @@
+name: cifar10
+
+root: ${oc.env:DIE_VFM_DATA_ROOT,./data/cifar10}
+image_size: [224, 224]
+download: false
+
+normalize:
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]

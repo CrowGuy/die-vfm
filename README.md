@@ -227,6 +227,89 @@ model/backbone: dummy
 
 ---
 
+## Datasets
+
+### CIFAR-10
+
+A real image classification dataset via `torchvision.datasets.CIFAR10`.
+
+**Install dependency** (`pillow` is required for image decoding):
+```bash
+pip install -e .[dev]   # already included
+```
+
+**Config** (`configs/dataset/cifar10.yaml`):
+```yaml
+name: cifar10
+root: ${oc.env:DIE_VFM_DATA_ROOT,./data/cifar10}  # override via env var
+image_size: [224, 224]
+download: false
+normalize:
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+```
+
+**Usage:**
+```bash
+# Set data root (or let it default to ./data/cifar10)
+export DIE_VFM_DATA_ROOT=/path/to/datasets
+
+python scripts/train.py \
+  dataset=cifar10 \
+  model/backbone=dinov2 \
+  model/pooler=attn_pooler_v1 \
+  experiment=round1_frozen
+```
+
+**Split convention:**
+
+| `split` arg | CIFAR-10 subset | Samples |
+|-------------|----------------|---------|
+| `train`     | training set   | 50,000  |
+| `val`       | test set       | 10,000  |
+
+> [!NOTE]
+> CIFAR-10 has no official validation split. `split="val"` maps to the CIFAR-10 test set (`train=False`).
+
+**Sample contract:**
+```python
+{
+    "image":    Tensor[3, 224, 224],   # resized to image_size, normalized
+    "label":    int,                    # 0–9
+    "image_id": "cifar10_train_00042", # f"cifar10_{split}_{index:05d}"
+    "meta": {
+        "split":      "train",
+        "index":      42,
+        "source":     "cifar10",
+        "class_name": "cat",            # human-readable label
+        "raw_label":  3,
+    },
+}
+```
+
+**10 classes:** airplane, automobile, bird, cat, deer, dog, frog, horse, ship, truck
+
+**Dataset metadata** (written to `dataset_metadata.yaml` on each run):
+```yaml
+dataset_name: cifar10
+split: train
+num_samples: 50000
+num_channels: 3
+image_size: [224, 224]
+num_classes: 10
+class_names: [airplane, automobile, ...]
+```
+
+### DummyDataset
+
+For testing without any real data:
+```bash
+dataset=dummy
+```
+Generates synthetic random images in memory. No download or external files.
+
+---
+
 ## Poolers
 
 ### MeanPooler
@@ -753,7 +836,8 @@ Key test files:
 | File | What it tests |
 |------|--------------|
 | `test_config.py` | Hydra config loading |
-| `test_dummy_dataset.py` | Dataset sample contract |
+| `test_dummy_dataset.py` | Dummy dataset sample contract |
+| `test_cifar10_dataset.py` | CIFAR-10 adapter contract, split mapping, collation |
 | `test_attn_pooler_v1.py` | Attention pooler shapes and weights |
 | `test_pooler_builder.py` | Pooler construction from config |
 | `test_embedding_artifact.py` | Manifest schema and shard validation |
@@ -779,7 +863,8 @@ die-vfm/
 │   ├── artifact/
 │   │   └── embedding.yaml
 │   ├── dataset/
-│   │   └── dummy.yaml
+│   │   ├── dummy.yaml
+│   │   └── cifar10.yaml
 │   ├── evaluation/
 │   │   ├── linear_probe.yaml
 │   │   ├── knn.yaml
@@ -825,6 +910,7 @@ die-vfm/
 │   ├── datasets/
 │   │   ├── base.py                # DatasetAdapter, DatasetSample
 │   │   ├── dummy_dataset.py
+│   │   ├── cifar10_dataset.py     # Cifar10DatasetAdapter
 │   │   └── builder.py
 │   │
 │   ├── artifacts/
