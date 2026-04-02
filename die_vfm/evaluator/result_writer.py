@@ -13,6 +13,7 @@ from die_vfm.evaluator.centroid_evaluator import CentroidEvaluationOutput
 from die_vfm.evaluator.io import LinearProbeDataBundle
 from die_vfm.evaluator.knn_evaluator import KnnEvaluationOutput
 from die_vfm.evaluator.linear_probe_trainer import LinearProbeTrainingResult
+from die_vfm.evaluator.retrieval_evaluator import RetrievalEvaluationOutput
 
 
 def write_linear_probe_outputs(
@@ -184,6 +185,62 @@ def write_centroid_outputs(
 
     if save_predictions:
         predictions_payload = build_centroid_predictions_payload(
+            result=result,
+            bundle=bundle,
+        )
+        predictions_path = output_path / "predictions.pt"
+        torch.save(predictions_payload, predictions_path)
+        written_paths["predictions"] = predictions_path
+
+    return written_paths
+
+def write_retrieval_outputs(
+    output_dir: str | Path,
+    result: RetrievalEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+    config: Any,
+    save_predictions: bool = True,
+) -> dict[str, Path]:
+    """Writes retrieval evaluation outputs to disk.
+
+    Args:
+      output_dir: Output directory for evaluator artifacts.
+      result: Evaluation result returned by evaluate_retrieval().
+      bundle: Prepared train/val bundle used for evaluation.
+      config: Config object or dict used for this evaluator run.
+      save_predictions: Whether to write predictions.pt.
+
+    Returns:
+      Mapping from artifact logical names to written paths.
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    written_paths: dict[str, Path] = {}
+
+    metrics_payload = build_retrieval_metrics_payload(
+        result=result,
+        bundle=bundle,
+    )
+    metrics_path = output_path / "metrics.yaml"
+    _write_yaml(metrics_path, metrics_payload)
+    written_paths["metrics"] = metrics_path
+
+    summary_payload = build_retrieval_summary_payload(
+        output_dir=output_path,
+        result=result,
+        bundle=bundle,
+    )
+    summary_path = output_path / "summary.yaml"
+    _write_yaml(summary_path, summary_payload)
+    written_paths["summary"] = summary_path
+
+    config_payload = _to_serializable_config(config)
+    config_path = output_path / "config.yaml"
+    _write_yaml(config_path, config_payload)
+    written_paths["config"] = config_path
+
+    if save_predictions:
+        predictions_payload = build_retrieval_predictions_payload(
             result=result,
             bundle=bundle,
         )
@@ -494,3 +551,98 @@ def _to_builtin_types(value: Any) -> Any:
             return value.item()
         return value.tolist()
     return value
+
+def build_retrieval_metrics_payload(
+    result: RetrievalEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the stable metrics.yaml payload for retrieval evaluation."""
+    payload: dict[str, Any] = {
+        "evaluator_type": "retrieval",
+        "evaluator_version": "v1",
+        "input": {
+            "gallery_split": bundle.train.split_name,
+            "query_split": bundle.val.split_name,
+            "gallery_num_samples": bundle.train.num_samples,
+            "query_num_samples": bundle.val.num_samples,
+            "embedding_dim": bundle.embedding_dim,
+            "num_classes": bundle.num_classes,
+            "class_ids": list(bundle.class_ids),
+        },
+        "query": {},
+    }
+
+    for key, value in result.metrics.items():
+        payload["query"][key] = float(value)
+
+    return payload
+
+
+def build_retrieval_predictions_payload(
+    result: RetrievalEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the predictions.pt payload for retrieval evaluation."""
+    if len(result.image_ids) != bundle.val.num_samples:
+        raise ValueError(
+            "Prediction image_ids length must match validation sample count. "
+            f"Got image_ids={len(result.image_ids)}, "
+            f"val_num_samples={bundle.val.num_samples}."
+        )
+
+    if int(result.query_labels.shape[0]) != bundle.val.num_samples:
+        raise ValueError(
+            "query_labels length must match validation sample count. "
+            f"Got query_labels.shape[0]={int(result.query_labels.shape[0])}, "
+            f"val_num_samples={bundle.val.num_samples}."
+        )
+
+    if int(result.topk_indices.shape[0]) != bundle.val.num_samples:
+        raise ValueError(
+            "topk_indices batch dimension must match validation sample count. "
+            f"Got topk_indices.shape[0]={int(result.topk_indices.shape[0])}, "
+            f"val_num_samples={bundle.val.num_samples}."
+        )
+
+    return {
+        "query_split": bundle.val.split_name,
+        "gallery_split": bundle.train.split_name,
+        "query_image_ids": list(result.image_ids),
+        "query_labels": result.query_labels.clone(),
+        "class_ids": torch.tensor(bundle.class_ids, dtype=torch.long),
+        "topk_indices": result.topk_indices.clone(),
+        "topk_labels": result.topk_labels.clone(),
+        "topk_scores": result.topk_scores.clone(),
+        "topk_matches": result.topk_matches.clone(),
+        "topk_image_ids": [list(row) for row in result.topk_image_ids],
+    }
+
+
+def build_retrieval_summary_payload(
+    output_dir: str | Path,
+    result: RetrievalEvaluationOutput,
+    bundle: LinearProbeDataBundle,
+) -> dict[str, Any]:
+    """Builds the summary.yaml payload for retrieval evaluation."""
+    summary = {
+        "status": "success",
+        "evaluator": "retrieval",
+        "gallery_split": bundle.train.split_name,
+        "query_split": bundle.val.split_name,
+        "gallery_num_samples": bundle.train.num_samples,
+        "query_num_samples": bundle.val.num_samples,
+        "embedding_dim": bundle.embedding_dim,
+        "num_classes": bundle.num_classes,
+        "output_dir": str(Path(output_dir)),
+    }
+
+    if "recall_at_1" in result.metrics:
+        summary["recall_at_1"] = float(result.metrics["recall_at_1"])
+    if "recall_at_5" in result.metrics:
+        summary["recall_at_5"] = float(result.metrics["recall_at_5"])
+    if "map_at_1" in result.metrics:
+        summary["map_at_1"] = float(result.metrics["map_at_1"])
+    if "map_at_5" in result.metrics:
+        summary["map_at_5"] = float(result.metrics["map_at_5"])
+
+    return summary    

@@ -7,6 +7,7 @@ defaults:
   - evaluation: linear_probe
   - evaluation/knn
   - evaluation/centroid
+  - evaluation/retrieval
   - _self_
 
 project:
@@ -37,6 +38,7 @@ evaluation:
   run_linear_probe: false
   run_knn: false
   run_centroid: false
+  run_retrieval: false
 
 artifact:
   embedding:

@@ -1,0 +1,58 @@
+# @package evaluation.retrieval
+
+# -----------------------------------------------------------------------------
+# Enable / disable
+# -----------------------------------------------------------------------------
+enabled: true
+
+
+# -----------------------------------------------------------------------------
+# Input: embedding artifacts
+# -----------------------------------------------------------------------------
+input:
+  # Required: directory containing train split embedding artifacts
+  train_split_dir: null
+
+  # Required: directory containing val split embedding artifacts
+  val_split_dir: null
+
+  # Whether to L2-normalize embeddings before evaluation
+  normalize_embeddings: false
+
+  # torch.load map_location
+  map_location: cpu
+
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output:
+  # Required: output directory for evaluation artifacts
+  output_dir: null
+
+  # Whether to write predictions.pt
+  save_predictions: true
+
+
+# -----------------------------------------------------------------------------
+# Evaluator (retrieval-specific)
+# -----------------------------------------------------------------------------
+evaluator:
+  # Distance / similarity metric
+  # Supported: cosine, l2
+  metric: cosine
+
+  # Query batch size (for memory control)
+  batch_size: 1024
+
+  # Device for computation
+  device: cpu
+
+  # Top-k metrics to report
+  topk: [1, 5, 10]
+
+  # Number of retrieved neighbors to save in predictions.pt
+  save_predictions_topk: 10
+
+  # Whether to exclude identical image_id between query and gallery
+  exclude_same_image_id: false

@@ -868,6 +868,183 @@ Centroid evaluator provides:
 | Centroid     | No               | O(C)       | Global cluster structure      |
 
 ---
+
+## Retrieval Evaluator (PR-9)
+
+PR-9 introduces the **Retrieval Evaluator** for artifact-driven embedding evaluation.
+
+New functionality includes:
+
+- Retrieval evaluator based on embedding artifacts only
+- Train split as gallery / reference set
+- Val split as query set
+- Recall@K metrics
+- mAP@K metrics
+- Hydra-configurable retrieval runner
+- Retrieval predictions artifact for debugging and inspection
+- Unit tests / runner tests / script tests
+
+This evaluator follows the existing evaluator framework:
+
+```text
+embedding artifacts
+  -> io loader
+  -> evaluator
+  -> runner
+  -> result writer
+```
+Critical constraints preserved in PR-9:
+
+- Evaluators consume embedding artifacts only
+- Evaluators do not use dataloaders directly
+- Model + Pooler contract remains unchanged
+- Artifact format remains stable
+
+### Retrieval Evaluator
+
+The Retrieval Evaluator measures how well embeddings support ranking-style retrieval.
+
+Evaluation protocol in PR-9:
+
+- gallery split: `train`
+- query split: `val`
+
+For each query embedding, the evaluator retrieves nearest gallery embeddings and computes retrieval metrics from label-based relevance.
+
+Supported metrics:
+
+- `Recall@K`
+- `mAP@K`
+
+Supported similarity metrics:
+
+- `cosine`
+- `l2`
+
+### Retrieval Evaluator Config
+
+Example config structure:
+```yaml
+evaluation:
+  retrieval:
+    enabled: true
+
+    input:
+      train_split_dir: runs/<run_name>/embeddings/train
+      val_split_dir: runs/<run_name>/embeddings/val
+      normalize_embeddings: false
+      map_location: cpu
+
+    output:
+      output_dir: runs/<run_name>/eval/retrieval
+      save_predictions: true
+
+    evaluator:
+      metric: cosine
+      batch_size: 1024
+      device: cpu
+      topk: [1, 5, 10]
+      save_predictions_topk: 10
+      exclude_same_image_id: false
+```
+
+### Run Retrieval Evaluation
+
+Example:
+```bash
+python scripts/run_retrieval.py \
+  evaluation.retrieval.enabled=true \
+  evaluation.retrieval.input.train_split_dir=runs/<run_name>/embeddings/train \
+  evaluation.retrieval.input.val_split_dir=runs/<run_name>/embeddings/val \
+  evaluation.retrieval.output.output_dir=runs/<run_name>/eval/retrieval
+```
+Typical usage writes outputs under:
+```text
+runs/<run_name>/eval/retrieval/
+```
+
+### Retrieval Outputs
+
+The Retrieval Evaluator writes:
+```text
+runs/<run_name>/eval/retrieval/
+├── metrics.yaml
+├── summary.yaml
+├── config.yaml
+└── predictions.pt
+```
+
+**`metrics.yaml`**
+
+Contains structured retrieval metrics and evaluator metadata, including:
+
+- gallery/query split information
+- number of gallery/query samples
+- embedding dimension
+- number of classes
+- recall_at_k
+- map_at_k
+
+**`summary.yaml`**
+
+Contains a compact summary for quick inspection, typically including:
+
+- evaluator name
+- gallery/query split
+- sample counts
+- key retrieval metrics such as:
+  - recall_at_1
+  - recall_at_5
+  - map_at_1
+  - map_at_5
+
+**`config.yaml`**
+
+Contains the resolved run configuration used for this retrieval evaluation.
+
+**`predictions.pt`**
+
+Contains retrieval evidence for debugging and inspection, including:
+
+- query image ids
+- query labels
+- retrieved gallery indices
+- retrieved gallery labels
+- retrieved gallery scores
+- retrieved gallery image ids
+- top-k relevance matches
+
+### Retrieval Metric Definition
+**Recall@K**
+
+For each query, Recall@K is counted as a hit if at least one relevant gallery sample appears in the top-K retrieved results.
+
+**mAP@K**
+
+mAP@K is computed from the ranked top-K retrieval results using label-based relevance.
+
+Queries without any positive sample in the gallery are excluded from the mAP denominator.
+
+### Design Notes
+
+PR-9 keeps the retrieval evaluator intentionally narrow and stable:
+
+- artifact-driven only
+- no dataloaders
+- no model contract changes
+- no artifact format changes
+- no ANN / FAISS dependency in M1
+- no multi-label retrieval in M1
+
+This keeps the evaluator aligned with the existing evaluation stack while leaving room for future work such as:
+
+- val-to-val retrieval
+- additional ranking metrics
+- large-scale retrieval backends
+- richer retrieval diagnostics
+
+---
+
 ## Repository Structure
 ```text
 die_vfm/
