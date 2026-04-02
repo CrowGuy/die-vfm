@@ -1,179 +1,393 @@
 # Die VFM
 
-Die-level visual foundation model platform.
+**Die-level Visual Foundation Model platform.**
 
-This repository provides a modular ML infrastructure for building
-**die-level visual foundation models (VFM)**.
-
-This repository skeleton provides:
-
-- Config composition via Hydra
-- Run directory creation
-- Logging
-- Training entry point bootstrap
-- Basic tests
+A modular ML infrastructure for building and evaluating die-level visual foundation models using a token-centric, pooler-based representation pipeline.
 
 ---
 
-## PR-2 Scope
+## Table of Contents
 
-PR-2 introduces the **dataset adapter interface and dataloader pipeline**.
+1. [Overview](#overview)
+2. [Quick Start](#quick-start)
+3. [Architecture](#architecture)
+4. [Pipeline](#pipeline)
+5. [Backbones](#backbones)
+6. [Poolers](#poolers)
+7. [Training](#training)
+8. [Embedding Artifacts](#embedding-artifacts)
+9. [Evaluators](#evaluators)
+10. [Checkpoint & Resume](#checkpoint--resume)
+11. [Configuration Reference](#configuration-reference)
+12. [Testing](#testing)
+13. [Repository Structure](#repository-structure)
+14. [Design Principles](#design-principles)
 
-New functionality includes:
+---
 
-- Dataset adapter base interface
-- Dummy dataset implementation
-- Dataset builder
-- Dataloader builder
-- Dataset metadata logging and artifact
-- Train entrypoint dataloader smoke test
-- Dataset unit tests
+## Overview
 
-# PR-3 Scope
+Die VFM uses a fixed two-stage pipeline:
 
-PR-3 introduces the **model pipeline** and connects it with the existing
-data pipeline.
-
-New functionality includes:
-
-- Model abstraction (`Backbone`, `Pooler`, `DieVFMModel`)
-- Model builder (`build_model`)
-- Dummy backbone (for testing)
-- Mean / Identity poolers
-- End-to-end model forward pipeline
-- Model forward smoke test
-- Model smoke artifact
-
-# Pipeline Overview
-
-## Data Pipeline (PR-2)
-```text
-config → dataloader → batch
+```
+Dataset → Model (Backbone + Pooler) → Embedding Artifact → Evaluator
 ```
 
-## Model Pipeline (PR-3)
-```text
-batch["image"]
-↓
-backbone
-↓
-patch tokens
-↓
-pooler
-↓
-embedding
+Key design decisions:
+- **Token-centric**: backbone outputs `patch_tokens [B, N, D]`, not logits
+- **Artifact-driven evaluation**: evaluators consume saved embeddings, not dataloaders
+- **Hydra config**: all behavior is composition-based and override-friendly
+- **Checkpoint-safe**: stable schema across training rounds
+
+---
+
+## Quick Start
+
+### Install
+
+```bash
+pip install -e .[dev]
 ```
 
-## Pooling Strategies (PR-4)
+### Run a smoke test (CPU, no data required)
 
-The pooling module aggregates patch/token-level features into a fixed-dimensional embedding.
+```bash
+python scripts/train.py \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dummy \
+  model/pooler=mean \
+  dataset=dummy
+```
 
-Currently supported poolers:
+### Run Round1 frozen backbone experiment
 
-### 1. Mean Pooler
+```bash
+python scripts/train.py \
+  experiment=round1_frozen \
+  model/backbone=dinov2 \
+  model/pooler=attn_pooler_v1
+```
 
-Averages valid token features.
+### Export embeddings
+
+```bash
+python scripts/export_embeddings.py \
+  run.run_name=my_run \
+  model/backbone=dinov2 \
+  model/pooler=attn_pooler_v1
+```
+
+### Run evaluation
+
+```bash
+# Linear probe
+python scripts/run_linear_probe.py \
+  evaluation.linear_probe.input.train_split_dir=runs/my_run/embeddings/train \
+  evaluation.linear_probe.input.val_split_dir=runs/my_run/embeddings/val \
+  evaluation.linear_probe.output.output_dir=runs/my_run/eval/linear_probe
+
+# kNN
+python scripts/run_knn.py \
+  evaluation.knn.input.train_split_dir=runs/my_run/embeddings/train \
+  evaluation.knn.input.val_split_dir=runs/my_run/embeddings/val \
+  evaluation.knn.output.output_dir=runs/my_run/eval/knn
+```
+
+### Run tests
+
+```bash
+pytest
+```
+
+---
+
+## Architecture
+
+### Component Contracts
+
+#### `BackboneOutput`
+
+```python
+@dataclass
+class BackboneOutput:
+    patch_tokens: Tensor    # [B, N, D]
+    cls_token:    Tensor | None  # [B, D]
+    token_mask:   Tensor | None  # [B, N]
+    feature_dim:  int
+    patch_grid:   tuple[int, int] | None
+    metadata:     dict
+```
+
+#### `PoolerOutput`
+
+```python
+@dataclass
+class PoolerOutput:
+    embedding:     Tensor        # [B, D_out]
+    token_weights: Tensor | None # [B, N]
+    metadata:      dict
+```
+
+#### `ModelOutput`
+
+```python
+@dataclass
+class ModelOutput:
+    embedding: Tensor            # [B, D_out]
+    backbone:  BackboneOutput | None
+    pooler:    PoolerOutput | None
+    metadata:  dict
+```
+
+#### `DatasetSample` (per item)
+
+```python
+{
+    "image":    Tensor,      # [C, H, W]
+    "label":    int | None,
+    "image_id": str,
+    "meta":     dict,
+}
+```
+
+#### Batch (collated)
+
+```python
+{
+    "image":    Tensor,      # [B, C, H, W]
+    "label":    Tensor | None,  # [B]
+    "image_id": list[str],
+    "meta":     list[dict],
+}
+```
+
+---
+
+## Pipeline
+
+```
+image [B,C,H,W]
+    │
+    ▼
+Backbone ──────────────────────────────► BackboneOutput
+  patch_tokens [B, N, D]
+  cls_token    [B, D]
+    │
+    ▼
+Pooler ─────────────────────────────────► PoolerOutput
+  embedding [B, D_out]
+    │
+    ▼
+EmbeddingExporter ─────────────────────► Artifact (manifest.yaml + part-*.pt)
+    │
+    ▼
+Evaluator (LinearProbe / kNN / Centroid / Retrieval)
+    │
+    ▼
+metrics.yaml / summary.yaml / predictions.pt
+```
+
+---
+
+## Backbones
+
+### DINOv2
+
 ```yaml
+# configs/model/backbone/dinov2.yaml
 model:
-  pooler:
-    name: mean
+  backbone:
+    name: dinov2
+    variant: vit_base      # vit_small | vit_base | vit_large | vit_giant
+    pretrained: true
+    freeze: true
+    return_cls_token: true
 ```
-- Simple and stable baseline
-- Ignores token importance differences
 
-### 2. Identity Pooler
+| Variant     | `feature_dim` |
+|-------------|--------------|
+| `vit_small` | 384          |
+| `vit_base`  | 768          |
+| `vit_large` | 1024         |
+| `vit_giant` | 1536         |
 
-Returns raw token features without pooling.
+Output contract:
+- `patch_tokens`: `[B, N, D]` — `N = (H/14) × (W/14)` for patch_size=14
+- `cls_token`: `[B, D]`
+- `token_mask`: always `None` (DINOv2 standard path)
+
+### DummyBackbone
+
+For testing without GPU or DINOv2 weights:
+
 ```yaml
-model:
-  pooler:
-    name: identity
+model/backbone: dummy
 ```
-- Mainly for debugging or downstream custom pooling
 
-### 3. AttnPoolerV1
+---
 
-Attention-based pooling that learns to weight tokens.
+## Poolers
+
+### MeanPooler
+
+Averages patch tokens (ignoring mask).
+
+```yaml
+model/pooler: mean
+```
+
+Best for: stable baseline, debugging.
+
+### AttnPoolerV1
+
+Single-query attention pooler. Learns per-token importance weights.
+
+```
+score_i = w_q^T tanh(W_k x_i)
+alpha   = softmax(score, dim=N)
+embed   = Σ alpha_i * x_i
+```
 
 ```yaml
 model:
   pooler:
     name: attn_pooler_v1
     hidden_dim: 256
-    output_dim: null
+    output_dim: null            # null = keep input_dim
     dropout: 0.0
     l2_norm: false
     use_cls_token_as_query: false
+    return_token_weights: true
 ```
 
-**Key idea:**
+Output: `token_weights [B, N]` (sum to 1 per sample).
 
-The model learns attention weights over tokens:
+Best for: token-importance analysis, defect localization.
 
-`embedding = Σ (attention_i * token_i)`
+### IdentityPooler
 
-**Features:**
+Returns raw patch tokens without aggregation. For debugging only.
 
-- Learns token importance dynamically
-- Supports masking invalid tokens
-- Optionally uses CLS token as attention query
-- Returns attention weights (token_weights) for analysis
+```yaml
+model/pooler: identity
+```
 
-**When to use:**
+---
 
-- When token-level importance matters (e.g. defect localization)
-- When mean pooling is too coarse
+## Training
 
-## Embedding Artifact (PR-5)
-### Overview
+### Modes
 
-PR-5 introduces an embedding artifact system that decouples model inference from downstream evaluation.
+Training mode is selected by `train.mode` (or through an experiment override):
 
-Instead of running evaluators directly on dataloaders and models, we now:
+| Mode | Description |
+|------|-------------|
+| `bootstrap` | Smoke test: reads one batch and runs one forward pass |
+| `round1_frozen` | Full Round1 orchestration: frozen backbone → embed → evaluate → checkpoint |
 
-`Dataset → Model → Embedding Artifact → Evaluator`
+### Round1 Frozen
 
-This enables:
+Runs the complete M1 experiment loop:
 
-- reproducible evaluation
-- faster iteration (no repeated forward passes)
-- clean separation between model and evaluator
+```bash
+python scripts/train.py \
+  experiment=round1_frozen \
+  model/backbone=dinov2 \
+  model/pooler=attn_pooler_v1 \
+  run.run_name=round1_exp1
+```
 
-### Artifact Structure
+**What happens each epoch:**
 
-Embedding artifacts are stored per run and per split:
+1. Build train + val dataloaders
+2. Freeze backbone (and optionally pooler)
+3. Export `train_embeddings` and `val_embeddings` to disk
+4. Run enabled evaluators (linear probe / kNN / retrieval)
+5. Track best metric, save checkpoint
+6. Write `round1_summary.yaml` + `round1_summary.json`
+
+**Output layout:**
+
 ```text
 runs/<run_name>/
-  embeddings/
-    train/
-      manifest.yaml
-      part-00000.pt
-    val/
-      manifest.yaml
-      part-00000.pt
-    test/  # optional
+├── config.yaml                    # frozen config snapshot
+├── logs/
+│   └── run.log
+├── checkpoints/
+│   ├── latest.pt
+│   ├── best.pt
+│   └── epoch_0000.pt
+└── round1/
+    └── epoch_0000/
+        ├── embeddings/
+        │   ├── train/
+        │   │   ├── manifest.yaml
+        │   │   └── part-00000.pt
+        │   └── val/
+        │       ├── manifest.yaml
+        │       └── part-00000.pt
+        ├── evaluation/
+        │   ├── linear_probe/
+        │   ├── knn/
+        │   └── retrieval/
+        ├── round1_summary.yaml
+        └── round1_summary.json
 ```
-Each split is **independent and self-contained**.
 
-### Shard Format (`.pt`)
+**Relevant config knobs:**
 
-Each shard file contains:
-```python
-{
-    "embeddings": Tensor[N, D],
-    "labels": Tensor[N] | None,
-    "image_ids": list[str],
-    "metadata": list[dict],
-}
+```yaml
+train:
+  mode: round1_frozen          # set automatically by experiment=round1_frozen
+  num_epochs: 1
+  freeze_backbone: true
+  freeze_pooler: true
+  selection_metric: linear_probe.val_accuracy
+
+evaluation:
+  run_linear_probe: true
+  knn:
+    enabled: true
+  retrieval:
+    enabled: false
 ```
-**Contract**
-- `embeddings[i] ↔ image_ids[i] ↔ metadata[i]`
-- `labels[i]` (if present) must align with `embeddings[i]`
-- `image_ids` must be unique within a split
 
-### Manifest Format
+### Bootstrap (smoke test)
 
-Each split contains a `manifest.yaml`:
+```bash
+python scripts/train.py \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dummy \
+  model/pooler=mean \
+  dataset=dummy
+```
+
+Produces in `runs/default/`:
+```text
+config.yaml
+dataset_metadata.yaml
+model_smoke.yaml
+logs/run.log
+```
+
+---
+
+## Embedding Artifacts
+
+Embeddings are saved as **first-class artifacts** — split-level, self-contained, and evaluator-readable without model code.
+
+### Structure
+
+```text
+<split_dir>/
+├── manifest.yaml
+└── part-00000.pt
+```
+
+### `manifest.yaml`
+
 ```yaml
 artifact_type: embedding_split
 artifact_version: v1
@@ -190,54 +404,325 @@ shards:
   - file_name: part-00000.pt
     num_samples: 12345
 ```
-**Notes**
-- Manifest is strictly validated
-- Sum of shard samples must equal num_samples
-- Designed for future multi-shard support
+
+### Shard format (`.pt`)
+
+```python
+{
+    "embeddings": Tensor[N, D],
+    "labels":     Tensor[N] | None,
+    "image_ids":  list[str],
+    "metadata":   list[dict],
+}
+```
+
+Alignment invariant: `embeddings[i] ↔ labels[i] ↔ image_ids[i] ↔ metadata[i]`
 
 ### Export API
+
 ```python
 from die_vfm.artifacts import export_split_embeddings
 
 manifest = export_split_embeddings(
     model=model,
     dataloader=dataloader,
-    output_dir=split_dir,
+    output_dir="runs/my_run/embeddings/train",
     split="train",
-    device="cpu",
+    device="cuda",
 )
 ```
+
 ### Load API
+
 ```python
 from die_vfm.artifacts import load_embedding_split
 
-artifact = load_embedding_split(split_dir)
+artifact = load_embedding_split("runs/my_run/embeddings/train")
 
-artifact.embeddings   # Tensor[N, D]
-artifact.labels       # Tensor[N] | None
-artifact.image_ids    # list[str]
-artifact.metadata     # list[dict]
-artifact.manifest
+artifact.embeddings  # Tensor[N, D]
+artifact.labels      # Tensor[N] | None
+artifact.image_ids   # list[str]
+artifact.metadata    # list[dict]
+artifact.manifest    # EmbeddingManifest
 ```
 
-### Script Usage
+---
 
-You can export embeddings using:
+## Evaluators
+
+All evaluators follow the same contract:
+- **Input**: embedding artifact directories (train + val)
+- **Output**: `metrics.yaml`, `summary.yaml`, `config.yaml`, `predictions.pt`
+- **No dataloaders**, **no model code** required
+
+### Evaluator Comparison
+
+| Evaluator    | Training | Complexity | Primary Metric  | Best for                    |
+|-------------|----------|------------|-----------------|------------------------------|
+| Linear Probe | Yes (linear) | O(N·E) | `val_accuracy`  | Learned classifier baseline |
+| kNN          | None     | O(N)       | `top1_accuracy` | Training-free quality check |
+| Centroid     | None     | O(C)       | `top1_accuracy` | Fast cluster structure check |
+| Retrieval    | None     | O(N·Q)     | `recall_at_1`   | Ranking / retrieval quality |
+
+### Linear Probe
+
+Trains a linear classifier on frozen embeddings.
+
 ```bash
-python scripts/export_embeddings.py \
-  run.run_name=my_run \
-  dataset=dummy \
-  model/backbone=dummy \
-  model/pooler=mean
+python scripts/run_linear_probe.py \
+  evaluation.run_linear_probe=true \
+  evaluation.linear_probe.input.train_split_dir=runs/<run>/embeddings/train \
+  evaluation.linear_probe.input.val_split_dir=runs/<run>/embeddings/val \
+  evaluation.linear_probe.output.output_dir=runs/<run>/eval/linear_probe
 ```
-Output will be written to:
+
+Key config:
+
+```yaml
+evaluation:
+  linear_probe:
+    input:
+      normalize_embeddings: false
+    model:
+      bias: true
+    trainer:
+      batch_size: 256
+      num_epochs: 50
+      learning_rate: 0.01
+      optimizer_name: sgd      # sgd | adamw
+      selection_metric: val_accuracy
+    output:
+      save_predictions: true
+      save_history: true
+```
+
+Output `metrics.yaml` includes: `train.accuracy`, `val.accuracy`, `best_epoch`, input metadata.
+
+### kNN Evaluator
+
+Training-free nearest-neighbor classifier.
+
 ```bash
-runs/my_run/embeddings/
+python scripts/run_knn.py \
+  evaluation.knn.input.train_split_dir=runs/<run>/embeddings/train \
+  evaluation.knn.input.val_split_dir=runs/<run>/embeddings/val \
+  evaluation.knn.output.output_dir=runs/<run>/eval/knn
 ```
 
-### Config
+Key config:
 
-Embedding export is controlled by:
+```yaml
+evaluation:
+  knn:
+    enabled: true
+    evaluator:
+      k: 20
+      metric: cosine       # cosine | l2
+      weighting: uniform   # uniform | distance
+      temperature: 0.07
+      batch_size: 1024
+      topk: [1, 5]
+```
+
+`predictions.pt` includes `neighbor_indices`, `neighbor_labels`, `neighbor_scores` for debugging.
+
+### Centroid Evaluator
+
+Computes one prototype (mean embedding) per class. O(C) at query time.
+
+```bash
+python scripts/run_centroid.py \
+  evaluation.centroid.enabled=true \
+  evaluation.centroid.input.train_split_dir=runs/<run>/embeddings/train \
+  evaluation.centroid.input.val_split_dir=runs/<run>/embeddings/val \
+  evaluation.centroid.output.output_dir=runs/<run>/eval/centroid
+```
+
+| | kNN | Centroid |
+|-|-----|---------|
+| Reference set | All train samples | Class means (C) |
+| Query complexity | O(N) | O(C) |
+| Flexibility | High | Low |
+
+### Retrieval Evaluator
+
+Measures embedding ranking quality via Recall@K and mAP@K.
+- Gallery = train split; Query = val split
+- Relevance is label-based
+
+```bash
+python scripts/run_retrieval.py \
+  evaluation.retrieval.enabled=true \
+  evaluation.retrieval.input.train_split_dir=runs/<run>/embeddings/train \
+  evaluation.retrieval.input.val_split_dir=runs/<run>/embeddings/val \
+  evaluation.retrieval.output.output_dir=runs/<run>/eval/retrieval
+```
+
+Key config:
+
+```yaml
+evaluation:
+  retrieval:
+    enabled: true
+    evaluator:
+      metric: cosine
+      topk: [1, 5, 10]
+      batch_size: 1024
+      exclude_same_image_id: false
+```
+
+Metrics: `recall_at_1`, `recall_at_5`, `recall_at_10`, `map_at_1`, `map_at_5`.
+
+---
+
+## Checkpoint & Resume
+
+### Layout
+
+```text
+<run_dir>/checkpoints/
+├── latest.pt       # always updated (last epoch)
+├── best.pt         # best selection metric
+└── epoch_0000.pt   # per-epoch snapshot
+```
+
+### Checkpoint Schema
+
+```python
+{
+    "checkpoint_version":     "v1",
+    "epoch":                  int,
+    "global_step":            int,
+    "model_state_dict":       dict,
+    "optimizer_state_dict":   dict | None,
+    "lr_scheduler_state_dict":dict | None,
+    "grad_scaler_state_dict": dict | None,
+    "trainer_state": {
+        "epoch":             int,
+        "global_step":       int,
+        "best_metric_name":  str | None,
+        "best_metric_value": float | None,
+    },
+    "metadata":               dict,
+}
+```
+
+### Resume Config
+
+```yaml
+train:
+  resume:
+    enabled: false
+    mode: full_resume          # full_resume | warm_start
+    checkpoint_path: null      # explicit path, or null for auto
+    auto_resume_latest: false
+```
+
+| Mode | Restores |
+|------|---------|
+| `warm_start` | model weights only (epoch resets to 0) |
+| `full_resume` | model + trainer state (epoch/global_step resume) |
+
+### Examples
+
+**Auto-resume from latest:**
+
+```bash
+python scripts/train.py \
+  experiment=round1_frozen \
+  train.resume.enabled=true \
+  train.resume.mode=full_resume \
+  train.resume.auto_resume_latest=true
+```
+
+**Warm start from a specific checkpoint:**
+
+```bash
+python scripts/train.py \
+  experiment=round1_frozen \
+  train.resume.enabled=true \
+  train.resume.mode=warm_start \
+  train.resume.checkpoint_path=/path/to/epoch_0000.pt
+```
+
+### Python API
+
+```python
+from die_vfm.trainer.checkpoint_manager import CheckpointManager
+
+ckpt = CheckpointManager("runs/my_run/checkpoints")
+
+# Save
+ckpt.save(model=model, trainer_state=state, epoch=0, global_step=100, is_best=True)
+
+# Warm start
+ckpt.load_warm_start(checkpoint_path="runs/my_run/checkpoints/best.pt", model=model)
+
+# Full resume
+ckpt.load_full_resume(
+    checkpoint_path="runs/my_run/checkpoints/latest.pt",
+    model=model,
+    trainer_state=state,
+)
+```
+
+---
+
+## Configuration Reference
+
+### Root config (`configs/config.yaml`)
+
+```yaml
+defaults:
+  - experiment: debug_model_smoke
+  - model/backbone: dummy
+  - model/pooler: mean
+  - dataset: dummy
+  - artifact: embedding
+  - evaluation: linear_probe
+  - evaluation/knn
+  - evaluation/centroid
+  - evaluation/retrieval
+
+run:
+  output_root: runs
+  run_name: null            # null → "default"
+  save_config_snapshot: true
+
+system:
+  seed: 42
+  device: cpu
+  num_workers: 4
+
+train:
+  mode: bootstrap           # bootstrap | round1_frozen
+  num_epochs: 1
+  freeze_backbone: true
+  freeze_pooler: true
+  selection_metric: linear_probe.val_accuracy
+  resume:
+    enabled: false
+    mode: full_resume
+    checkpoint_path: null
+    auto_resume_latest: false
+```
+
+### Experiment presets
+
+| Name | File | Description |
+|------|------|-------------|
+| `debug_model_smoke` | `experiment/debug_model_smoke.yaml` | Minimal smoke test |
+| `round1_frozen` | `experiment/round1_frozen.yaml` | Round1 frozen backbone run |
+
+### Available model configs
+
+| Component | Config key | Options |
+|-----------|-----------|---------|
+| Backbone  | `model/backbone` | `dummy`, `dinov2` |
+| Pooler    | `model/pooler` | `mean`, `identity`, `attn_pooler_v1` |
+
+### Artifact config
+
 ```yaml
 artifact:
   embedding:
@@ -247,1106 +732,147 @@ artifact:
     include_test_split: false
 ```
 
-### Design Constraints
-
-This artifact system enforces:
-
-- Evaluators MUST consume artifacts (not dataloaders)
-- Artifacts must be split-based
-- Artifacts must be loadable without model code
-- Alignment between embeddings and metadata must be preserved
-
 ---
-## End-to-End Evaluation Workflow
 
-All evaluators (linear probe, kNN, centroid) follow a **two-stage pipeline**:
-
-```text
-Dataset → Model → Embedding Artifact → Evaluator
-```
-
-### Step 1: Export embeddings (PR-5)
-```bash
-python scripts/export_embeddings.py \
-  run.run_name=demo \
-  dataset=dummy \
-  model/backbone=dummy \
-  model/pooler=mean
-```
----
-This produces:
-```text
-runs/demo/embeddings/
-  train/
-    manifest.yaml
-    part-00000.pt
-  val/
-    manifest.yaml
-    part-00000.pt
-```
----
-### Step 2: Run evaluator (PR-6 / PR-7 / PR-8)
-
-Example (centroid):
+## Testing
 
 ```bash
-python scripts/run_centroid.py \
-  evaluation.centroid.enabled=true \
-  evaluation.centroid.input.train_split_dir=runs/demo/embeddings/train \
-  evaluation.centroid.input.val_split_dir=runs/demo/embeddings/val \
-  evaluation.centroid.output.output_dir=runs/demo/eval/centroid
+# All tests
+pytest
+
+# Specific areas
+pytest tests/test_attn_pooler_v1.py
+pytest tests/test_embedding_artifact.py
+pytest tests/test_knn_evaluator.py
+pytest tests/test_linear_probe.py
+pytest tests/test_train_bootstrap.py
 ```
----
 
-All evaluators operate on embedding artifacts defined in PR-5.
+Key test files:
 
-The artifact format is:
-
-```text
-<split>/
-  manifest.yaml
-  part-00000.pt
-```
-Each shard contains:
-
-{
-  "embeddings": Tensor[N, D],
-  "labels": Tensor[N] | None,
-  "image_ids": list[str],
-  "metadata": list[dict],
-}
-
----
-
-## Linear Probe Evaluator (PR-6)
-
-This PR introduces an **artifact-driven linear probe evaluator** that trains a linear classifier on embedding artifacts and evaluates on validation embeddings.
-
-### Key Principles
-
-- Evaluators **consume embedding artifacts only**
-- Evaluators **do not depend on dataloaders or models**
-- Fully **decoupled from training pipeline**
-- **Reproducible** and **configurable via Hydra**
+| File | What it tests |
+|------|--------------|
+| `test_config.py` | Hydra config loading |
+| `test_dummy_dataset.py` | Dataset sample contract |
+| `test_attn_pooler_v1.py` | Attention pooler shapes and weights |
+| `test_pooler_builder.py` | Pooler construction from config |
+| `test_embedding_artifact.py` | Manifest schema and shard validation |
+| `test_embedding_exporter.py` | Export pipeline |
+| `test_embedding_loader.py` | Load and alignment checks |
+| `test_linear_probe.py` | Linear probe forward + metrics |
+| `test_linear_probe_trainer.py` | Full training loop |
+| `test_linear_probe_runner.py` | End-to-end runner |
+| `test_knn_evaluator.py` | kNN distance + voting |
+| `test_knn_runner.py` | End-to-end kNN runner |
+| `test_centroid_evaluator.py` | Centroid prototype logic |
+| `test_retrieval_evaluator.py` | Recall@K / mAP@K |
+| `test_train_bootstrap.py` | Full bootstrap smoke test |
 
 ---
-
-## Pipeline
-```text
-Embedding Artifacts (PR-5)
-├── train/
-└── val/
-↓
-Linear Probe Evaluator (PR-6)
-↓
-Evaluation Outputs
-```
----
-
-## Input: Embedding Artifacts
-
-Expected directory structure:
-```text
-runs/<run_name>/embeddings/
-├── train/
-│ ├── manifest.yaml
-│ └── part-00000.pt
-└── val/
-├── manifest.yaml
-└── part-00000.pt
-```
-
-Each shard (`.pt`) contains:
-
-```python
-{
-  "embeddings": Tensor[N, D],
-  "labels": Tensor[N],
-  "image_ids": list[str],
-  "metadata": list[dict],
-}
-```
----
-Output: Evaluation Artifacts
-
-The evaluator writes results to:
-
-```text
-<output_dir>/
-  ├── metrics.yaml
-  ├── summary.yaml
-  ├── config.yaml
-  ├── history.yaml          # optional
-  └── predictions.pt        # optional
-```
-
-### `metrics.yaml`
-```yaml
-evaluator_type: linear_probe
-evaluator_version: v1
-
-input:
-  train_split: train
-  val_split: val
-  train_num_samples: ...
-  val_num_samples: ...
-  embedding_dim: ...
-  num_classes: ...
-  class_ids: [...]
-
-best_epoch: ...
-
-train:
-  loss: ...
-  accuracy: ...
-
-val:
-  loss: ...
-  accuracy: ...
-```
-
-### `predictions.pt`
-```python
-{
-  "split": "val",
-  "image_ids": [...],
-  "labels": Tensor[N],
-  "pred_labels": Tensor[N],
-  "logits": Tensor[N, C],
-  "class_ids": Tensor[C],
-}
-```
-
-### Usage
-**Run via CLI**
-```bash
-python scripts/run_linear_probe.py \
-  evaluation.run_linear_probe=true \
-  evaluation.linear_probe.input.train_split_dir=runs/<run_name>/embeddings/train \
-  evaluation.linear_probe.input.val_split_dir=runs/<run_name>/embeddings/val \
-  evaluation.linear_probe.output.output_dir=runs/<run_name>/evaluations/linear_probe
-```
-**Common overrides**
-```bash
-evaluation.linear_probe.trainer.optimizer_name=adamw
-evaluation.linear_probe.trainer.learning_rate=0.05
-evaluation.linear_probe.trainer.batch_size=256
-evaluation.linear_probe.trainer.num_epochs=50
-```
-
-### Config Structure
-```text
-evaluation.linear_probe
-  ├── input
-  ├── output
-  ├── model
-  └── trainer
-```
-**Example**
-```yaml
-evaluation:
-  linear_probe:
-    input:
-      train_split_dir: ...
-      val_split_dir: ...
-      normalize_embeddings: false
-
-    output:
-      output_dir: ...
-      save_predictions: true
-      save_history: true
-
-    model:
-      bias: true
-
-    trainer:
-      batch_size: 256
-      num_epochs: 50
-      learning_rate: 0.01
-      optimizer_name: sgd
-      selection_metric: val_accuracy
-```
----
-### API
-**Run programmatically**
-```python
-from die_vfm.evaluator import run_linear_probe, build_linear_probe_run_config
-
-config = build_linear_probe_run_config(
-    train_split_dir="...",
-    val_split_dir="...",
-    output_dir="...",
-)
-
-result = run_linear_probe(config)
-
-print(result.val_metrics)
-```
----
-### Design Notes
-- No DataLoader usage
-    - batching is implemented via tensor slicing
-- Strict artifact alignment
-    - embeddings ↔ labels ↔ image_ids
-- Model-free evaluation
-    - artifacts are sufficient for evaluation
-- Minimal M1 implementation
-    - single-shard only
-    - single-device only
----
-
-## kNN Evaluator (PR-7)
-
-The kNN evaluator provides a training-free baseline to assess embedding quality using nearest neighbor classification.
-
-- `Reference set`: train split embeddings
-- `Query set`: val split embeddings
-- `Input`: embedding artifacts (no dataloaders)
-- `Output`: metrics + predictions + neighbor metadata
-
-This evaluator is fully artifact-driven and follows the same contract as the linear probe evaluator.
-
-### Pipeline
-```text
-Embedding Artifacts (train / val)
-        ↓
-kNN Evaluator
-        ↓
-Predictions + Metrics
-```
----
-### Key Properties
-- No training required
-- Deterministic evaluation
-- Supports cosine and L2 distance
-- Supports uniform and distance-weighted voting
-- Fully Hydra-configurable
-- Compatible with existing artifact format
-
----
-### Usage
-**1. Prepare embedding artifacts**
-
-Make sure you already exported embeddings:
-```bash
-python scripts/export_embeddings.py ...
-```
-You should have:
-```text
-runs/<run_name>/embeddings/
-  train/
-    manifest.yaml
-    part-00000.pt
-  val/
-    manifest.yaml
-    part-00000.pt
-```
-Each split follows the embedding artifact contract defined in PR-5.
-
----
-**2. Run kNN evaluation**
-```bash
-python scripts/run_knn.py \
-  evaluation.knn.input.train_split_dir=runs/<run_name>/embeddings/train \
-  evaluation.knn.input.val_split_dir=runs/<run_name>/embeddings/val \
-  evaluation.knn.output.output_dir=runs/<run_name>/evaluations/knn
-```
----
-### Outputs
-
-The evaluator writes the following artifacts:
-
-**`metrics.yaml`**
-```yaml
-evaluator_type: knn
-evaluator_version: v1
-
-input:
-  train_split: train
-  val_split: val
-  train_num_samples: 10240
-  val_num_samples: 2048
-  embedding_dim: 384
-  num_classes: 12
-  class_ids: [0, 1, ...]
-
-val:
-  accuracy: 0.91
-  top1_accuracy: 0.91
-  top5_accuracy: 0.98
-```
----
-
-**`summary.yaml`**
-```yaml
-status: success
-evaluator: knn
-train_split: train
-val_split: val
-val_accuracy: 0.91
-output_dir: outputs/knn_eval
-```
----
-**`config.yaml`**
-
-Resolved run configuration used for this evaluation.
-
----
-
-**`predictions.pt`**
-```python
-{
-  "split": "val",
-  "image_ids": [...],
-  "labels": Tensor[N],
-  "pred_labels": Tensor[N],
-  "logits": Tensor[N, C],
-  "class_ids": Tensor[C],
-
-  # kNN-specific
-  "neighbor_indices": Tensor[N, K],
-  "neighbor_labels": Tensor[N, K],
-  "neighbor_scores": Tensor[N, K],
-}
-```
----
-
-### Configuration Reference
-`Input`
-| Field                  | Description                        |
-| ---------------------- | ---------------------------------- |
-| `train_split_dir`      | Path to train embedding artifacts  |
-| `val_split_dir`        | Path to val embedding artifacts    |
-| `normalize_embeddings` | Whether to L2 normalize embeddings |
-| `map_location`         | torch.load device                  |
-
----
-
-`Output`
-| Field              | Description                       |
-| ------------------ | --------------------------------- |
-| `output_dir`       | Directory to write outputs        |
-| `save_predictions` | Whether to write `predictions.pt` |
-
----
-
-`evaluator`
-| Field         | Description                 |
-| ------------- | --------------------------- |
-| `k`           | Number of nearest neighbors |
-| `metric`      | `cosine` or `l2`            |
-| `weighting`   | `uniform` or `distance`     |
-| `temperature` | Used for distance weighting |
-| `batch_size`  | Query batch size            |
-| `device`      | cpu / cuda                  |
-| `topk`        | Top-k metrics               |
-
----
-### Notes
-- k must be ≤ number of train samples
-- topk must be ≤ number of classes
-- distance weighting uses softmax over neighbor scores
-- For cosine similarity, embeddings are normalized internally
----
-### Comparison with Linear Probe
-| Aspect    | Linear Probe        | kNN                        |
-| --------- | ------------------- | -------------------------- |
-| Training  | Required            | Not required               |
-| Speed     | Slower              | Faster                     |
-| Stability | Depends on training | Deterministic              |
-| Use case  | Learned classifier  | Embedding quality baseline |
-
----
-### When to use kNN
-Use kNN when you want:
-- Quick sanity check of embedding quality
-- Training-free evaluation
-- Baseline comparison with learned classifiers
-- Debugging embedding space structure
-
----
-## Centroid / Prototype Classifier Evaluator (PR-8)
-
-### Overview
-
-This PR introduces a centroid-based (prototype) classifier evaluator for embedding quality assessment.
-
-- Train split → used to build class prototypes (centroids)
-- Val split → used as query set
-- Fully artifact-driven (no dataloaders)
-- Compatible with existing evaluator framework
-
-Pipeline:
-```text
-train embeddings ──► class prototypes [C, D]
-val embeddings   ──► similarity to prototypes ──► predictions
-```
----
-### Key Properties
-- One prototype per class (mean embedding)
-- Supports:
-    - cosine similarity
-    - L2 distance
-- Fast and memory-efficient baseline
-- Deterministic (no training / no randomness)
-- Output format aligned with:
-    - Linear Probe (PR-6)
-    - kNN (PR-7)
----
-### Usage
-**1. Prepare embedding artifacts**
-
-You should already have embedding artifacts from the pipeline:
-```text
-outputs/<run_name>/embeddings/
-  train/
-    manifest.yaml
-    part-00000.pt
-  val/
-    manifest.yaml
-    part-00000.pt
-```
-Generate embeddings if not already done:
-```bash
-python scripts/export_embeddings.py \
-  run.run_name=demo \
-  dataset=dummy \
-  model/backbone=dummy \
-  model/pooler=mean
-```
----
-
-**2. Run centroid evaluation**
-Centroid evaluation is controlled by:
-
-```bash
-evaluation.centroid.enabled=true
-```
-
-```bash
-python scripts/run_centroid.py \
-  evaluation.centroid.enabled=true \
-  evaluation.centroid.input.train_split_dir=runs/demo/embeddings/train \
-  evaluation.centroid.input.val_split_dir=runs/demo/embeddings/val \
-  evaluation.centroid.output.output_dir=runs/demo/eval/centroid
-```
----
-**Optional overrides**
-```bash
-evaluation.centroid.evaluator.metric=l2
-evaluation.centroid.evaluator.batch_size=512
-evaluation.centroid.evaluator.topk=[1]
-```
----
-**3. Example config**
-```yaml
-evaluation:
-  centroid:
-    input:
-      train_split_dir: runs/<run_name>/embeddings/train
-      val_split_dir: runs/<run_name>/embeddings/val
-      normalize_embeddings: false
-      map_location: cpu
-
-    output:
-      output_dir: runs/<run_name>/eval/centroid
-      save_predictions: true
-
-    evaluator:
-      metric: cosine
-      batch_size: 1024
-      device: cpu
-      topk: [1, 5]
-```
----
-### Output Artifacts
-
-After running, the following files will be generated:
-```text
-output_dir/
-  metrics.yaml
-  summary.yaml
-  config.yaml
-  predictions.pt
-```
----
-**metrics.yaml**
-Stable metric output:
-```yaml
-evaluator_type: centroid
-evaluator_version: v1
-
-input:
-  train_split: train
-  val_split: val
-  train_num_samples: 50000
-  val_num_samples: 10000
-  embedding_dim: 768
-  num_classes: 10
-
-prototype:
-  num_prototypes: 10
-  prototype_dim: 768
-
-val:
-  accuracy: 0.85
-  top1_accuracy: 0.85
-  top5_accuracy: 0.98
-```
----
-**summary.yaml**
-
-Compact run summary:
-```yaml
-status: success
-evaluator: centroid
-train_split: train
-val_split: val
-num_prototypes: 10
-val_accuracy: 0.85
-```
----
-**predictions.pt**
-
-Saved as a PyTorch dictionary:
-```yaml
-{
-    "image_ids": [...],
-    "labels": Tensor[N],
-    "pred_labels": Tensor[N],
-    "logits": Tensor[N, C],
-
-    # Prototype information
-    "prototype_labels": Tensor[C],
-    "prototypes": Tensor[C, D],
-}
-```
----
-### Design Notes
-**Why centroid?**
-- Provides a strong, cheap baseline
-- Much faster than kNN (O(C) vs O(N))
-- Easy to interpret
-- No hyperparameter tuning required
----
-## Relationship to kNN
-| Evaluator | Reference set     | Complexity | Notes           |
-| --------- | ----------------- | ---------- | --------------- |
-| kNN       | all train samples | O(N)       | more flexible   |
-| centroid  | class means       | O(C)       | faster, simpler |
-
----
-### Constraints (unchanged)
-- Evaluators consume embedding artifacts only
-- No dataloaders
-- Model / pooler contract is frozen
-- Artifact format is stable
----
-### Future Extensions (not in PR-8)
-- Multi-prototype per class
-- Class-conditional covariance / Mahalanobis distance
-- Prototype refinement
-- Temperature scaling / calibration
-- Open-set recognition
----
-### Summary
-
-Centroid evaluator provides:
-
-✅ Fast baseline
-✅ Fully artifact-driven evaluation
-✅ Consistent interface with existing evaluators
-✅ Minimal configuration
----
-
-## Evaluator Comparison
-
-| Evaluator     | Training Required | Complexity | Use Case                      |
-|--------------|------------------|------------|-------------------------------|
-| Linear Probe | Yes              | O(N)       | Learned classifier baseline   |
-| kNN          | No               | O(N)       | Local structure evaluation    |
-| Centroid     | No               | O(C)       | Global cluster structure      |
-
----
-
-## Retrieval Evaluator (PR-9)
-
-PR-9 introduces the **Retrieval Evaluator** for artifact-driven embedding evaluation.
-
-New functionality includes:
-
-- Retrieval evaluator based on embedding artifacts only
-- Train split as gallery / reference set
-- Val split as query set
-- Recall@K metrics
-- mAP@K metrics
-- Hydra-configurable retrieval runner
-- Retrieval predictions artifact for debugging and inspection
-- Unit tests / runner tests / script tests
-
-This evaluator follows the existing evaluator framework:
-
-```text
-embedding artifacts
-  -> io loader
-  -> evaluator
-  -> runner
-  -> result writer
-```
-Critical constraints preserved in PR-9:
-
-- Evaluators consume embedding artifacts only
-- Evaluators do not use dataloaders directly
-- Model + Pooler contract remains unchanged
-- Artifact format remains stable
-
-### Retrieval Evaluator
-
-The Retrieval Evaluator measures how well embeddings support ranking-style retrieval.
-
-Evaluation protocol in PR-9:
-
-- gallery split: `train`
-- query split: `val`
-
-For each query embedding, the evaluator retrieves nearest gallery embeddings and computes retrieval metrics from label-based relevance.
-
-Supported metrics:
-
-- `Recall@K`
-- `mAP@K`
-
-Supported similarity metrics:
-
-- `cosine`
-- `l2`
-
-### Retrieval Evaluator Config
-
-Example config structure:
-```yaml
-evaluation:
-  retrieval:
-    enabled: true
-
-    input:
-      train_split_dir: runs/<run_name>/embeddings/train
-      val_split_dir: runs/<run_name>/embeddings/val
-      normalize_embeddings: false
-      map_location: cpu
-
-    output:
-      output_dir: runs/<run_name>/eval/retrieval
-      save_predictions: true
-
-    evaluator:
-      metric: cosine
-      batch_size: 1024
-      device: cpu
-      topk: [1, 5, 10]
-      save_predictions_topk: 10
-      exclude_same_image_id: false
-```
-
-### Run Retrieval Evaluation
-
-Example:
-```bash
-python scripts/run_retrieval.py \
-  evaluation.retrieval.enabled=true \
-  evaluation.retrieval.input.train_split_dir=runs/<run_name>/embeddings/train \
-  evaluation.retrieval.input.val_split_dir=runs/<run_name>/embeddings/val \
-  evaluation.retrieval.output.output_dir=runs/<run_name>/eval/retrieval
-```
-Typical usage writes outputs under:
-```text
-runs/<run_name>/eval/retrieval/
-```
-
-### Retrieval Outputs
-
-The Retrieval Evaluator writes:
-```text
-runs/<run_name>/eval/retrieval/
-├── metrics.yaml
-├── summary.yaml
-├── config.yaml
-└── predictions.pt
-```
-
-**`metrics.yaml`**
-
-Contains structured retrieval metrics and evaluator metadata, including:
-
-- gallery/query split information
-- number of gallery/query samples
-- embedding dimension
-- number of classes
-- recall_at_k
-- map_at_k
-
-**`summary.yaml`**
-
-Contains a compact summary for quick inspection, typically including:
-
-- evaluator name
-- gallery/query split
-- sample counts
-- key retrieval metrics such as:
-  - recall_at_1
-  - recall_at_5
-  - map_at_1
-  - map_at_5
-
-**`config.yaml`**
-
-Contains the resolved run configuration used for this retrieval evaluation.
-
-**`predictions.pt`**
-
-Contains retrieval evidence for debugging and inspection, including:
-
-- query image ids
-- query labels
-- retrieved gallery indices
-- retrieved gallery labels
-- retrieved gallery scores
-- retrieved gallery image ids
-- top-k relevance matches
-
-### Retrieval Metric Definition
-**Recall@K**
-
-For each query, Recall@K is counted as a hit if at least one relevant gallery sample appears in the top-K retrieved results.
-
-**mAP@K**
-
-mAP@K is computed from the ranked top-K retrieval results using label-based relevance.
-
-Queries without any positive sample in the gallery are excluded from the mAP denominator.
-
-### Design Notes
-
-PR-9 keeps the retrieval evaluator intentionally narrow and stable:
-
-- artifact-driven only
-- no dataloaders
-- no model contract changes
-- no artifact format changes
-- no ANN / FAISS dependency in M1
-- no multi-label retrieval in M1
-
-This keeps the evaluator aligned with the existing evaluation stack while leaving room for future work such as:
-
-- val-to-val retrieval
-- additional ranking metrics
-- large-scale retrieval backends
-- richer retrieval diagnostics
-
----
-## Checkpoint & Resume (M1)
-
-### Checkpoint Layout
-
-After each training bootstrap run, checkpoints are written to:
-```text
-<run_dir>/checkpoints/
-  ├── latest.pt
-  ├── best.pt
-  └── epoch_0000.pt
-```
-
-- `latest.pt`: most recent checkpoint (always updated)
-- `best.pt`: best checkpoint (first run = best)
-- `epoch_xxxx.pt`: per-epoch snapshot (M1 uses epoch_0000)
-
-### Resume Modes
-
-Resume behavior is controlled by:
-
-```yaml
-train:
-  resume:
-    enabled: false
-    mode: "warm_start"   # or "full_resume"
-    checkpoint_path: null
-    auto_resume_latest: false
-```
-**warm_start**
-- Loads model weights only
-- Does NOT restore training state
-
-**full_resume**
-- Loads:
-  - model weights
-  - trainer state (epoch, global_step)
-- Designed for continuing training
-
-
-### Auto Resume
-
-When:
-
-```yaml
-train.resume.enabled = true
-train.resume.auto_resume_latest = true
-train.resume.checkpoint_path = null
-```
-
-The system will automatically resume from:
-```text
-<run_dir>/checkpoints/latest.pt
-```
-
-### Examples
-
-**Fresh run**
-
-```bash
-python scripts/train.py
-```
-
-**Auto resume latest**
-```bash
-python scripts/train.py \
-  train.resume.enabled=true \
-  train.resume.mode=full_resume \
-  train.resume.auto_resume_latest=true \
-  train.resume.checkpoint_path=null
-```
-**Warm start from checkpoint**
-```bash
-python scripts/train.py \
-  train.resume.enabled=true \
-  train.resume.mode=warm_start \
-  train.resume.checkpoint_path=/path/to/checkpoint.pt
-```
 
 ## Repository Structure
+
 ```text
-die_vfm/
-├── pyproject.toml
-├── README.md
-├── .gitignore
+die-vfm/
 ├── configs/
-│   ├── config.yaml
+│   ├── config.yaml                # root Hydra config
+│   ├── artifact/
+│   │   └── embedding.yaml
 │   ├── dataset/
 │   │   └── dummy.yaml
+│   ├── evaluation/
+│   │   ├── linear_probe.yaml
+│   │   ├── knn.yaml
+│   │   ├── centroid.yaml
+│   │   └── retrieval.yaml
 │   ├── experiment/
+│   │   ├── debug_model_smoke.yaml
 │   │   └── round1_frozen.yaml
-│   ├── model/
-│   │   ├── backbone/
-│   │   │   └── dinov2.yaml
-│   │   └── pooler/
-│   │       ├── attn_pooler_v1.yaml
-│   │       └── mean_pooler.yaml
+│   └── model/
+│       ├── backbone/
+│       │   ├── dinov2.yaml
+│       │   └── dummy.yaml
+│       └── pooler/
+│           ├── attn_pooler_v1.yaml
+│           ├── identity.yaml
+│           └── mean.yaml
+│
 ├── scripts/
-│   └── train.py
+│   ├── train.py                   # main entrypoint (bootstrap + round1)
+│   ├── export_embeddings.py       # standalone embedding export
+│   ├── run_linear_probe.py
+│   ├── run_knn.py
+│   ├── run_centroid.py
+│   └── run_retrieval.py
+│
 ├── die_vfm/
-│   ├── datasets/
-│   │   ├── base.py
-│   │   ├── builder.py
-│   │   └── dummy_dataset.py
-│   ├── utils/
-│   ├── trainer/
 │   ├── models/
+│   │   ├── outputs.py             # BackboneOutput, PoolerOutput, ModelOutput
+│   │   ├── model.py               # DieVFMModel
+│   │   ├── builder.py
+│   │   ├── backbone/
+│   │   │   ├── base.py
+│   │   │   ├── dinov2_backbone.py
+│   │   │   ├── dummy_backbone.py
+│   │   │   └── builder.py
+│   │   └── pooler/
+│   │       ├── base.py
+│   │       ├── mean_pooler.py
+│   │       ├── attn_pooler_v1.py
+│   │       ├── identity_pooler.py
+│   │       └── builder.py
+│   │
+│   ├── datasets/
+│   │   ├── base.py                # DatasetAdapter, DatasetSample
+│   │   ├── dummy_dataset.py
+│   │   └── builder.py
+│   │
+│   ├── artifacts/
+│   │   ├── embedding_artifact.py  # EmbeddingManifest, LoadedEmbeddingSplit
+│   │   ├── embedding_exporter.py
+│   │   └── embedding_loader.py
+│   │
+│   ├── trainer/
+│   │   ├── base_trainer.py        # TrainerState
+│   │   ├── checkpoint_manager.py  # CheckpointManager
+│   │   └── round1_trainer.py      # Round1FrozenTrainer
+│   │
 │   ├── evaluator/
-│   └── artifacts/
+│   │   ├── io.py                  # shared artifact loader
+│   │   ├── metrics.py
+│   │   ├── result_writer.py
+│   │   ├── linear_probe.py
+│   │   ├── linear_probe_trainer.py
+│   │   ├── linear_probe_runner.py
+│   │   ├── knn_evaluator.py
+│   │   ├── knn_runner.py
+│   │   ├── centroid_evaluator.py
+│   │   ├── centroid_runner.py
+│   │   ├── retrieval_evaluator.py
+│   │   └── retrieval_runner.py
+│   │
+│   ├── config/
+│   │   └── schema.py
+│   └── utils/
+│       └── run_dir.py
+│
 └── tests/
-    ├── test_config.py
-    ├── test_dummy_dataset.py
-    ├── test_train_bootstrap.py
+    ├── models/
+    └── test_*.py
 ```
 
-## Dataset Sample Contract
-
-Each dataset adapter must return samples with the following structure:
-
-```python
-{
-    "image": Tensor,        # shape: [C, H, W]
-    "label": int | None,
-    "image_id": str,
-    "meta": dict
-}
-```
-Example:
-```python
-{
-    "image": tensor(3,224,224),
-    "label": 0,
-    "image_id": "train_00000",
-    "meta": {
-        "split": "train",
-        "index": 0,
-        "source": "dummy"
-    }
-}
-```
----
-## Batch Contract
-
-The dataloader collates dataset samples into batches:
-
-```python
-{
-    "image": Tensor,        # shape: [B, C, H, W]
-    "label": Tensor | None, # shape: [B]
-    "image_id": list[str],
-    "meta": list[dict],
-}
-```
----
-## Model Contract (PR-3)
-### Input
-```python
-image: Tensor[B, C, H, W]
-```
-### Output
-```python
-ModelOutput:
-{
-    "embedding": Tensor[B, D],
-    "backbone": BackboneOutput | None,
-    "pooler": PoolerOutput | None,
-}
-```
-
-## Smoke Test
-
-### 1. Dataloader + Model Smoke Test
-```bash
-python scripts/train.py \
-    system.num_workers=0 \
-    system.device=cpu \
-    model/backbone=dummy \
-    model/pooler=mean \
-    dataset=dummy \
-    train.run_dataloader_smoke_test=true \
-    train.run_model_forward_smoke_test=true
-```
-Expected logs:
-```text
-Dataloader smoke test passed.
-Batch image shape: (4, 3, 224, 224)
-
-Built model: DieVFMModel
-Backbone: DummyBackbone
-Pooler: MeanPooler
-
-Model forward completed.
-Embedding shape: (4, 192)
-
-Training bootstrap completed successfully.
-```
----
-## Run Artifacts
-
-During training bootstrap the following artifacts are generated:
-```text
-runs/<run_name>/
-├── config.yaml
-├── dataset_metadata.yaml
-├── model_smoke.yaml
-└── logs/
-    └── run.log
-```
-`dataset_metadata.yaml` contains dataset-level information such as:
-- dataset_name
-- split
-- num_samples
-- num_classes
-
-`model_smoke.yaml` contains model-level information such as:
-- model name
-- backbone / pooler
-- embedding shape
-- patch token shape
 ---
 
-## Quick Start
-
-### Install
-
-```bash
-pip install -e .[dev]
-```
-### Run
-```bash
-python scripts/train.py
-```
-
-### Run with overrides
-```bash
-python scripts/train.py run.run_name=debug
-```
-
-### Run smoke test
-
-```bash
-python scripts/train.py \
-    system.device=cpu \
-    system.num_workers=0
-```
----
-## Test
-Run all tests:
-```bash
-pytest
-```
-- `test_dummy_dataset.py` — dataset contract
-- `test_model_builder.py` — model construction
-- `test_dummy_backbone.py` — backbone contract
-- `test_mean_pooler.py` — pooler contract
-- `test_model_forward_smoke.py` — model pipeline
-- `test_train_bootstrap.py` — end-to-end bootstrap
----
 ## Design Principles
-- Clear contract between components:
-    - Dataset → Batch → Model → Embedding
-- Minimal abstraction per PR
-- Fail-fast config validation
-- Testability first (dummy components)
-- Separation of:
-    - data pipeline
-    - model pipeline
-    - training logic (future work)
 
----
-## `.gitignore`
+1. **Token-centric backbone output** — `patch_tokens [B, N, D]` is the primary representation; poolers convert it to a global embedding.
 
-```gitignore
-# Python
-__pycache__/
-*.py[cod]
-*.so
+2. **Artifact-driven evaluation** — evaluators never touch dataloaders or model code. This enables reproducible evaluation, fast iteration, and clean component boundaries.
 
-# Packaging
-*.egg-info/
-build/
-dist/
+3. **Stable contracts** — `BackboneOutput`, `PoolerOutput`, `DatasetSample`, `EmbeddingManifest`, and checkpoint schema are frozen. Adding a new backbone or pooler does not break existing evaluator code.
 
-# Virtual env
-.venv/
-venv/
+4. **Minimal M1 scope** — Round1 uses frozen backbone + pooler. No optimizer tuition, no distributed training, no fancy loss. The loop is: embed → evaluate → checkpoint.
 
-# Testing
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
+5. **Fail-fast config validation** — Hydra composition + strict dataclass validation means misconfigured runs fail at startup, not mid-epoch.
 
-# IDE
-.vscode/
-.idea/
-
-# Hydra / outputs
-outputs/
-multirun/
-
-# Project runs
-runs/
-
-# Logs
-*.log
-```
+6. **Testability** — every component has a `Dummy*` counterpart so tests are fast, offline, and deterministic.

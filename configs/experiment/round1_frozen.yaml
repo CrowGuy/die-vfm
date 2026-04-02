@@ -1,3 +1,76 @@
-# @package experiment
-mode: round1_frozen
-description: "Round1 frozen backbone representation pipeline."
+defaults:
+  - /dataset: dummy
+  - /model: default
+  - /artifact: embedding
+  - override /hydra/job_logging: disabled
+  - override /hydra/hydra_logging: disabled
+
+run:
+  run_name: round1_frozen_dummy_attn_v1
+
+train:
+  mode: round1_frozen
+  num_epochs: 1
+  freeze_backbone: true
+  freeze_pooler: true
+  selection_metric: retrieval.top1_accuracy
+
+  resume:
+    enabled: false
+    checkpoint_path: null
+    mode: full_resume
+    auto_resume_latest: false
+
+evaluation:
+  run_linear_probe: true
+
+  linear_probe:
+    input:
+      normalize_embeddings: false
+      map_location: cpu
+    model:
+      bias: true
+    trainer:
+      batch_size: 64
+      num_epochs: 10
+      learning_rate: 0.001
+      weight_decay: 0.0
+      optimizer_name: sgd
+      momentum: 0.9
+      device: cpu
+      seed: 123
+      selection_metric: accuracy
+    output:
+      save_predictions: true
+      save_history: true
+
+  knn:
+    enabled: true
+    input:
+      normalize_embeddings: false
+      map_location: cpu
+    evaluator:
+      k: 5
+      metric: cosine
+      weighting: uniform
+      temperature: 0.07
+      batch_size: 128
+      device: cpu
+      topk: [1, 5]
+    output:
+      save_predictions: true
+
+  retrieval:
+    enabled: true
+    input:
+      normalize_embeddings: false
+      map_location: cpu
+    evaluator:
+      metric: cosine
+      batch_size: 128
+      device: cpu
+      topk: [1, 5]
+      save_predictions_topk: 10
+      exclude_same_image_id: false
+    output:
+      save_predictions: true
