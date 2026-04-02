@@ -1044,6 +1044,83 @@ This keeps the evaluator aligned with the existing evaluation stack while leavin
 - richer retrieval diagnostics
 
 ---
+## Checkpoint & Resume (M1)
+
+### Checkpoint Layout
+
+After each training bootstrap run, checkpoints are written to:
+```text
+<run_dir>/checkpoints/
+  ├── latest.pt
+  ├── best.pt
+  └── epoch_0000.pt
+```
+
+- `latest.pt`: most recent checkpoint (always updated)
+- `best.pt`: best checkpoint (first run = best)
+- `epoch_xxxx.pt`: per-epoch snapshot (M1 uses epoch_0000)
+
+### Resume Modes
+
+Resume behavior is controlled by:
+
+```yaml
+train:
+  resume:
+    enabled: false
+    mode: "warm_start"   # or "full_resume"
+    checkpoint_path: null
+    auto_resume_latest: false
+```
+**warm_start**
+- Loads model weights only
+- Does NOT restore training state
+
+**full_resume**
+- Loads:
+  - model weights
+  - trainer state (epoch, global_step)
+- Designed for continuing training
+
+
+### Auto Resume
+
+When:
+
+```yaml
+train.resume.enabled = true
+train.resume.auto_resume_latest = true
+train.resume.checkpoint_path = null
+```
+
+The system will automatically resume from:
+```text
+<run_dir>/checkpoints/latest.pt
+```
+
+### Examples
+
+**Fresh run**
+
+```bash
+python scripts/train.py
+```
+
+**Auto resume latest**
+```bash
+python scripts/train.py \
+  train.resume.enabled=true \
+  train.resume.mode=full_resume \
+  train.resume.auto_resume_latest=true \
+  train.resume.checkpoint_path=null
+```
+**Warm start from checkpoint**
+```bash
+python scripts/train.py \
+  train.resume.enabled=true \
+  train.resume.mode=warm_start \
+  train.resume.checkpoint_path=/path/to/checkpoint.pt
+```
 
 ## Repository Structure
 ```text

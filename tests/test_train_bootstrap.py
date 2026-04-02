@@ -77,3 +77,184 @@ def test_train_bootstrap_runs_dataloader_and_model_smoke_test(
     assert "pooler: MeanPooler" in model_smoke_text
     assert "- 4" in model_smoke_text
     assert "- 192" in model_smoke_text
+
+def test_train_bootstrap_writes_checkpoint_set(tmp_path: Path) -> None:
+  """Tests that bootstrap writes latest/best/epoch checkpoints."""
+  run_name = "pytest-train-checkpoint-save"
+  command = [
+      sys.executable,
+      "scripts/train.py",
+      f"run.output_root={tmp_path}",
+      f"run.run_name={run_name}",
+      "system.num_workers=0",
+      "system.device=cpu",
+      "model/backbone=dummy",
+      "model/pooler=mean",
+      "dataset=dummy",
+      "train.run_dataloader_smoke_test=true",
+  ]
+
+  result = subprocess.run(
+      command,
+      check=False,
+      capture_output=True,
+      text=True,
+  )
+
+  assert result.returncode == 0, (
+      f"train.py failed with stderr:\n{result.stderr}\n"
+      f"stdout:\n{result.stdout}"
+  )
+
+  checkpoint_dir = tmp_path / run_name / "checkpoints"
+  assert checkpoint_dir.exists()
+  assert (checkpoint_dir / "latest.pt").exists()
+  assert (checkpoint_dir / "best.pt").exists()
+  assert (checkpoint_dir / "epoch_0000.pt").exists()
+
+
+def test_train_bootstrap_auto_resume_latest_full_resume(
+    tmp_path: Path,
+) -> None:
+  """Tests that bootstrap can auto-resume from latest.pt."""
+  run_name = "pytest-train-auto-resume-full"
+
+  first_command = [
+      sys.executable,
+      "scripts/train.py",
+      f"run.output_root={tmp_path}",
+      f"run.run_name={run_name}",
+      "system.num_workers=0",
+      "system.device=cpu",
+      "model/backbone=dummy",
+      "model/pooler=mean",
+      "dataset=dummy",
+      "train.run_dataloader_smoke_test=true",
+  ]
+  first_result = subprocess.run(
+      first_command,
+      check=False,
+      capture_output=True,
+      text=True,
+  )
+
+  assert first_result.returncode == 0, (
+      f"first run failed with stderr:\n{first_result.stderr}\n"
+      f"stdout:\n{first_result.stdout}"
+  )
+
+  second_command = [
+      sys.executable,
+      "scripts/train.py",
+      f"run.output_root={tmp_path}",
+      f"run.run_name={run_name}",
+      "system.num_workers=0",
+      "system.device=cpu",
+      "model/backbone=dummy",
+      "model/pooler=mean",
+      "dataset=dummy",
+      "train.run_dataloader_smoke_test=true",
+      "train.resume.enabled=true",
+      "train.resume.mode=full_resume",
+      "train.resume.auto_resume_latest=true",
+      "train.resume.checkpoint_path=null",
+  ]
+  second_result = subprocess.run(
+      second_command,
+      check=False,
+      capture_output=True,
+      text=True,
+  )
+
+  assert second_result.returncode == 0, (
+      f"second run failed with stderr:\n{second_result.stderr}\n"
+      f"stdout:\n{second_result.stdout}"
+  )
+
+  log_path = tmp_path / run_name / "logs" / "run.log"
+  log_text = log_path.read_text(encoding="utf-8")
+
+  assert "Resolved resume checkpoint:" in log_text
+  assert "Resume mode: full_resume" in log_text
+  assert "Full resume completed." in log_text
+
+  checkpoint_dir = tmp_path / run_name / "checkpoints"
+  assert (checkpoint_dir / "latest.pt").exists()
+  assert (checkpoint_dir / "epoch_0000.pt").exists()
+
+
+def test_train_bootstrap_explicit_warm_start_checkpoint(
+        tmp_path: Path,
+    ) -> None:
+    """Tests that bootstrap can warm start from an explicit checkpoint."""
+    source_run_name = "pytest-train-warm-start-source"
+    target_run_name = "pytest-train-warm-start-target"
+
+    source_command = [
+        sys.executable,
+        "scripts/train.py",
+        f"run.output_root={tmp_path}",
+        f"run.run_name={source_run_name}",
+        "system.num_workers=0",
+        "system.device=cpu",
+        "model/backbone=dummy",
+        "model/pooler=mean",
+        "dataset=dummy",
+        "train.run_dataloader_smoke_test=true",
+    ]
+    source_result = subprocess.run(
+        source_command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert source_result.returncode == 0, (
+        f"source run failed with stderr:\n{source_result.stderr}\n"
+        f"stdout:\n{source_result.stdout}"
+    )
+
+    checkpoint_path = (
+        tmp_path / source_run_name / "checkpoints" / "latest.pt"
+    )
+    assert checkpoint_path.exists()
+
+    target_command = [
+        sys.executable,
+        "scripts/train.py",
+        f"run.output_root={tmp_path}",
+        f"run.run_name={target_run_name}",
+        "system.num_workers=0",
+        "system.device=cpu",
+        "model/backbone=dummy",
+        "model/pooler=mean",
+        "dataset=dummy",
+        "train.run_dataloader_smoke_test=true",
+        "train.resume.enabled=true",
+        "train.resume.mode=warm_start",
+        f"train.resume.checkpoint_path={checkpoint_path}",
+        "train.resume.auto_resume_latest=false",
+    ]
+    target_result = subprocess.run(
+        target_command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert target_result.returncode == 0, (
+        f"target run failed with stderr:\n{target_result.stderr}\n"
+        f"stdout:\n{target_result.stdout}"
+    )
+
+    log_path = tmp_path / target_run_name / "logs" / "run.log"
+    log_text = log_path.read_text(encoding="utf-8")
+
+    assert "Resolved resume checkpoint:" in log_text
+    assert "Resume mode: warm_start" in log_text
+    assert "Warm start completed from checkpoint." in log_text
+
+    checkpoint_dir = tmp_path / target_run_name / "checkpoints"
+    assert (checkpoint_dir / "latest.pt").exists()
+    assert (checkpoint_dir / "best.pt").exists()
+    assert (checkpoint_dir / "epoch_0000.pt").exists()
