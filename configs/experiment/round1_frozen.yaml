@@ -1,20 +1,18 @@
+# @package _global_
+
 defaults:
-  - /dataset: dummy
-  - /model: default
-  - /artifact: embedding
   - override /hydra/job_logging: disabled
   - override /hydra/hydra_logging: disabled
 
 run:
-  run_name: round1_frozen_dummy_attn_v1
+  run_name: round1_cifar10_4090_smoke
 
 train:
   mode: round1_frozen
   num_epochs: 1
   freeze_backbone: true
   freeze_pooler: true
-  selection_metric: retrieval.top1_accuracy
-
+  selection_metric: knn.top1_accuracy
   resume:
     enabled: false
     checkpoint_path: null
@@ -23,6 +21,9 @@ train:
 
 evaluation:
   run_linear_probe: true
+  run_knn: true
+  run_centroid: false
+  run_retrieval: true
 
   linear_probe:
     input:
@@ -45,7 +46,6 @@ evaluation:
       save_history: true
 
   knn:
-    enabled: true
     input:
       normalize_embeddings: false
       map_location: cpu
@@ -61,16 +61,6 @@ evaluation:
       save_predictions: true
 
   retrieval:
-    enabled: true
     input:
       normalize_embeddings: false
       map_location: cpu
-    evaluator:
-      metric: cosine
-      batch_size: 128
-      device: cpu
-      topk: [1, 5]
-      save_predictions_topk: 10
-      exclude_same_image_id: false
-    output:
-      save_predictions: true

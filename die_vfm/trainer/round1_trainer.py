@@ -121,6 +121,9 @@ class Round1FrozenTrainer:
             metrics = self._run_evaluators(epoch_artifacts)
             final_metrics = metrics
 
+            # print("DEBUG metrics keys:", sorted(metrics.keys()))
+            # print("DEBUG metrics:", metrics)
+
             is_best = self._update_best_metric(
                 trainer_state=trainer_state,
                 metrics=metrics,

@@ -60,13 +60,19 @@ python scripts/train.py \
   dataset=dummy
 ```
 
-### Run Round1 frozen backbone experiment
+### Run Round1 frozen backbone experiment (CIFAR-10)
+
+The following command has been verified on a real CIFAR-10 dataset run:
 
 ```bash
+export DIE_VFM_DATA_ROOT=/path/to/datasets
+
 python scripts/train.py \
   experiment=round1_frozen \
+  dataset=cifar10 \
   model/backbone=dinov2 \
-  model/pooler=attn_pooler_v1
+  model/pooler=attn_pooler_v1 \
+  system.device=cuda
 ```
 
 ### Export embeddings
@@ -418,22 +424,37 @@ runs/<run_name>/
         └── round1_summary.json
 ```
 
-**Relevant config knobs:**
+**Relevant config knobs (from `experiment=round1_frozen`):**
 
 ```yaml
 train:
-  mode: round1_frozen          # set automatically by experiment=round1_frozen
+  mode: round1_frozen
   num_epochs: 1
   freeze_backbone: true
   freeze_pooler: true
-  selection_metric: linear_probe.val_accuracy
+  selection_metric: knn.top1_accuracy   # primary metric for best.pt selection
 
 evaluation:
   run_linear_probe: true
+  run_knn: true
+  run_centroid: false
+  run_retrieval: true
+
+  linear_probe:
+    trainer:
+      batch_size: 64
+      num_epochs: 10
+      learning_rate: 0.001
+      optimizer_name: sgd
+      momentum: 0.9
+      selection_metric: accuracy
+
   knn:
-    enabled: true
-  retrieval:
-    enabled: false
+    evaluator:
+      k: 5
+      metric: cosine
+      weighting: uniform
+      topk: [1, 5]
 ```
 
 ### Bootstrap (smoke test)
@@ -708,13 +729,31 @@ train:
 
 ### Examples
 
-**Auto-resume from latest:**
+**Explicit Checkpoint Resume (Full Resume):**
 
 ```bash
 python scripts/train.py \
   experiment=round1_frozen \
+  dataset=cifar10 \
+  run.run_name=round1_cifar10_resume_explicit \
+  train.num_epochs=2 \
   train.resume.enabled=true \
   train.resume.mode=full_resume \
+  train.resume.checkpoint_path=runs/round1_cifar10_4090_smoke/checkpoints/epoch_0000.pt \
+  train.resume.auto_resume_latest=false
+```
+
+**Auto-resume from `latest.pt` (Full Resume):**
+
+```bash
+python scripts/train.py \
+  experiment=round1_frozen \
+  dataset=cifar10 \
+  run.run_name=round1_cifar10_resume_auto \
+  train.num_epochs=2 \
+  train.resume.enabled=true \
+  train.resume.mode=full_resume \
+  train.resume.checkpoint_path=null \
   train.resume.auto_resume_latest=true
 ```
 
@@ -723,6 +762,7 @@ python scripts/train.py \
 ```bash
 python scripts/train.py \
   experiment=round1_frozen \
+  dataset=cifar10 \
   train.resume.enabled=true \
   train.resume.mode=warm_start \
   train.resume.checkpoint_path=/path/to/epoch_0000.pt
@@ -780,9 +820,9 @@ system:
 train:
   mode: bootstrap           # bootstrap | round1_frozen
   num_epochs: 1
-  freeze_backbone: true
-  freeze_pooler: true
-  selection_metric: linear_probe.val_accuracy
+  freeze_backbone: false
+  freeze_pooler: false
+  selection_metric: knn.top1_accuracy
   resume:
     enabled: false
     mode: full_resume

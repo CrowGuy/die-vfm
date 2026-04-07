@@ -24,7 +24,10 @@ system:
   num_workers: 4
 
 train:
-  max_epochs: 1
+  num_epochs: 1
+  freeze_backbone: false
+  freeze_pooler: false
+  selection_metric: knn.top1_accuracy
   log_every_n_steps: 10
   run_dataloader_smoke_test: true
   run_model_forward_smoke_test: true
