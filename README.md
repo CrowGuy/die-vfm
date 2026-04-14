@@ -24,6 +24,18 @@ The repository does not yet treat `round2_ssl`, `round3_supcon`, or a fully feat
 - [Future Spec](docs/future-spec.md)
 - [Testing Spec](docs/testing-spec.md)
 - [Checkpoint / Resume Spec](docs/checkpoint-resume-spec.md)
+- [Implementation Roadmap](docs/implementation-roadmap.md)
+
+Document roles:
+
+- `README.md`: project entrypoint, current status, and navigation
+- `docs/current-spec.md`: current formal implementation and testing contract
+- `docs/future-spec.md`: future-facing roadmap and non-current design direction
+- `docs/testing-spec.md`: verification scope for current formal behavior
+- `docs/checkpoint-resume-spec.md`: current checkpoint and resume contract
+- `docs/implementation-roadmap.md`: execution order for implementation work
+
+If documentation drifts, current implementation work should follow runtime code, `configs/`, and `docs/current-spec.md` before future-facing design notes.
 
 ## Quick Start
 

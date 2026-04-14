@@ -4,6 +4,8 @@
 
 This document defines the intended evolution path beyond the current M1 and Round1 repository scope. It is a roadmap-level contract, not a statement of completed functionality.
 
+This document must not be used by itself to justify current support claims, tests, or README language.
+
 ## Future Positioning
 
 Die VFM is intended to evolve from an artifact-centric visual embedding platform into a multi-stage representation training platform for die-level visual foundation models.
@@ -141,3 +143,5 @@ A feature should move from future spec into current spec only when all of the fo
 - README and docs are aligned
 
 Until then, the feature should be described as planned, experimental, or future-facing rather than supported.
+
+If there is conflict between this document and `docs/current-spec.md`, current implementation work must follow `docs/current-spec.md`.

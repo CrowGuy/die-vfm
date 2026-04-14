@@ -27,6 +27,13 @@ Completion criteria:
 - repo has a clear execution boundary for agents
 - current and future scope are explicitly separated
 
+Current status:
+
+- repo-level governance files are in place
+- future and current scope are split into separate docs
+- README has been reduced to entrypoint scope
+- continued work should now use these governance rules as default operating constraints
+
 ## Phase 1: Config and Schema Drift Cleanup
 
 Goal:

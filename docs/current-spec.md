@@ -4,6 +4,8 @@
 
 This document defines the current formal spec for the repository as it exists today. It is the contract that implementation and testing should follow for M1 and Round1 work.
 
+If this document conflicts with `docs/future-spec.md`, implementation and testing must follow this document for current-scope work.
+
 ## Scope
 
 Current scope is intentionally narrow:
@@ -16,6 +18,8 @@ Current scope is intentionally narrow:
 - M1 checkpoint/resume behavior
 
 The current spec does not formally include SSL training, supervised contrastive training, or advanced distributed resume guarantees.
+
+Current-scope changes should not be merged conceptually with future-scope design unless the feature has been explicitly promoted.
 
 ## System Positioning
 
