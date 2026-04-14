@@ -40,7 +40,7 @@ evaluation:
       momentum: 0.9
       device: cpu
       seed: 123
-      selection_metric: accuracy
+      selection_metric: val_accuracy
     output:
       save_predictions: true
       save_history: true

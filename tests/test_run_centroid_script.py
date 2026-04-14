@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from scripts.run_centroid import (
     _extract_centroid_config,
     _format_metrics,
+    _is_enabled,
     _to_plain_object,
     main,
 )
@@ -70,6 +71,41 @@ def test_extract_centroid_config_raises_when_centroid_is_missing() -> None:
         match="Missing required Hydra config section: evaluation.centroid",
     ):
         _extract_centroid_config(config)
+
+
+def test_is_enabled_defaults_to_true_when_missing() -> None:
+    """Centroid evaluator should default to enabled=True."""
+    centroid_config = OmegaConf.create(
+        {
+            "input": {
+                "train_split_dir": "/tmp/train",
+                "val_split_dir": "/tmp/val",
+            },
+            "output": {
+                "output_dir": "/tmp/out",
+            },
+        }
+    )
+
+    assert _is_enabled(centroid_config) is True
+
+
+def test_is_enabled_returns_false_when_disabled() -> None:
+    """Should detect enabled=False correctly."""
+    centroid_config = OmegaConf.create(
+        {
+            "enabled": False,
+            "input": {
+                "train_split_dir": "/tmp/train",
+                "val_split_dir": "/tmp/val",
+            },
+            "output": {
+                "output_dir": "/tmp/out",
+            },
+        }
+    )
+
+    assert _is_enabled(centroid_config) is False
 
 
 def test_to_plain_object_returns_plain_dict() -> None:
@@ -231,6 +267,46 @@ def test_main_orchestrates_resolve_and_run(monkeypatch, capsys, tmp_path: Path) 
     assert f"Output directory: {tmp_path}" in stdout
     assert "accuracy=1.000000" in stdout
     assert "top1_accuracy=1.000000" in stdout
+
+
+def test_main_skips_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main should skip execution when centroid evaluation is disabled."""
+    hydra_config = OmegaConf.create(
+        {
+            "evaluation": {
+                "centroid": {
+                    "enabled": False,
+                    "input": {
+                        "train_split_dir": "/data/train_embeddings",
+                        "val_split_dir": "/data/val_embeddings",
+                    },
+                    "output": {
+                        "output_dir": "/tmp/out",
+                    },
+                    "evaluator": {
+                        "metric": "cosine",
+                    },
+                }
+            }
+        }
+    )
+
+    monkeypatch.setattr(
+        "scripts.run_centroid.resolve_centroid_run_config",
+        lambda _: pytest.fail("resolve_centroid_run_config should not be called"),
+    )
+    monkeypatch.setattr(
+        "scripts.run_centroid.run_centroid",
+        lambda _: pytest.fail("run_centroid should not be called"),
+    )
+
+    main.__wrapped__(hydra_config)
+
+    captured = capsys.readouterr()
+    assert "Centroid evaluation is disabled. Skipping." in captured.out
 
 
 def test_main_propagates_missing_centroid_section(monkeypatch) -> None:

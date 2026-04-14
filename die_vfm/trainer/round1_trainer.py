@@ -308,7 +308,7 @@ class Round1FrozenTrainer:
             for key, value in linear_probe_result.val_metrics.items():
                 metrics[f"linear_probe.{key}"] = float(value)
 
-        if bool(evaluation_cfg.knn.enabled):
+        if bool(evaluation_cfg.run_knn):
             knn_cfg = evaluation_cfg.knn
             knn_run_cfg = build_knn_run_config(
                 train_split_dir=artifacts.train_embedding_dir,
@@ -329,7 +329,7 @@ class Round1FrozenTrainer:
             for key, value in knn_result.val_metrics.items():
                 metrics[f"knn.{key}"] = float(value)
 
-        if bool(evaluation_cfg.retrieval.enabled):
+        if bool(evaluation_cfg.run_retrieval):
             retrieval_cfg = evaluation_cfg.retrieval
             retrieval_run_cfg = build_retrieval_run_config(
                 train_split_dir=artifacts.train_embedding_dir,

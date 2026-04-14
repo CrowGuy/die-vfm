@@ -26,6 +26,11 @@ def _extract_centroid_config(config: DictConfig) -> DictConfig:
     return config.evaluation.centroid
 
 
+def _is_enabled(centroid_config: DictConfig) -> bool:
+    """Returns whether centroid evaluation is enabled."""
+    return bool(centroid_config.get("enabled", True))
+
+
 def _to_plain_object(config: DictConfig) -> dict[str, Any]:
     """Converts an OmegaConf config to a plain Python dict."""
     plain_config = OmegaConf.to_container(
@@ -68,6 +73,11 @@ def _print_run_summary(result_output_dir: Path, metrics: dict[str, float]) -> No
 def main(config: DictConfig) -> None:
     """Runs centroid evaluation from Hydra config."""
     centroid_config = _extract_centroid_config(config)
+
+    if not _is_enabled(centroid_config):
+        print("Centroid evaluation is disabled. Skipping.")
+        return
+
     typed_config: CentroidRunConfig = resolve_centroid_run_config(
         _to_plain_object(centroid_config)
     )

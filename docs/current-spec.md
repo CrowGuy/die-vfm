@@ -205,6 +205,25 @@ Required payload fields:
 
 Current spec does not require `token_weights` to be saved in the artifact.
 
+### Artifact export config status
+
+Current runtime-effective `artifact.embedding` fields:
+
+- `enabled`
+- `output_subdir`
+- `export_splits`
+- `include_test_split`
+
+Current M1 placeholder `artifact.embedding` fields:
+
+- `save_labels`
+- `save_metadata`
+- `artifact_version`
+- `shard_size`
+
+Placeholder fields exist in the current config surface but do not yet change
+runtime exporter behavior.
+
 ## Evaluator Spec
 
 Current repository formally supports these artifact-driven evaluators:
@@ -273,7 +292,22 @@ Current canonical configuration source is:
 - `configs/`
 - runtime code
 
-Typed schema in `die_vfm/config/schema.py` is not yet treated as the formal canonical contract because naming drift exists.
+`die_vfm/config/schema.py` is intentionally treated as a typed helper and current-config mirror for M1 / Round1 work.
+
+Under the current repository policy:
+
+- `configs/` and runtime code are the canonical configuration source
+- `schema.py` is not a formal enforcement layer
+- `schema.py` may be used to improve readability, typing, and future cleanup
+- when `schema.py` disagrees with runtime behavior, runtime behavior wins
+
+Current config expectations:
+
+- `train.mode` selects the current runtime path and defaults to `bootstrap` when omitted by config composition
+- `train.num_epochs` is the current formal epoch-count field for Round1 work
+- `evaluation.run_*` fields are top-level orchestration toggles in the root config and are the control point used by `round1_frozen`
+- nested `evaluation.<name>` subtrees hold evaluator-specific input, output, and algorithm settings
+- nested evaluator `enabled` fields are the control point used by standalone evaluator scripts, but do not replace the root current-scope orchestration hierarchy
 
 ## Current Acceptance Boundaries
 

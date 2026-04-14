@@ -44,14 +44,19 @@ def _require_output_dir(value: Any, field_name: str) -> Path:
     return Path(value)
 
 
+def _is_enabled(linear_probe_cfg: DictConfig) -> bool:
+    """Returns whether the linear probe evaluator is enabled."""
+    return bool(linear_probe_cfg.get("enabled", True))
+
+
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
     """Runs linear probe evaluation from embedding artifacts."""
-    if not cfg.evaluation.run_linear_probe:
-        print("evaluation.run_linear_probe is false; nothing to do.")
-        return
-
     linear_probe_cfg = cfg.evaluation.linear_probe
+
+    if not _is_enabled(linear_probe_cfg):
+        print("Linear probe evaluation is disabled. Skipping.")
+        return
 
     train_split_dir = _require_path(
         linear_probe_cfg.input.train_split_dir,
@@ -108,6 +113,5 @@ def main(cfg: DictConfig) -> None:
         file.write(OmegaConf.to_yaml(cfg, resolve=True))
 
     print(f"Resolved Hydra config saved to: {hydra_config_path}")
-
 if __name__ == "__main__":
     main()

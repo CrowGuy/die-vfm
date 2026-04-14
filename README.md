@@ -91,6 +91,7 @@ This writes embedding artifacts to `runs/my_run/embeddings/<split>/`.
 
 ```bash
 python scripts/run_linear_probe.py \
+  evaluation.linear_probe.enabled=true \
   evaluation.linear_probe.input.train_split_dir=runs/my_run/embeddings/train \
   evaluation.linear_probe.input.val_split_dir=runs/my_run/embeddings/val \
   evaluation.linear_probe.output.output_dir=runs/my_run/eval/linear_probe

@@ -1,5 +1,20 @@
 # @package artifact.embedding
 
+# Current runtime-effective fields in M1:
+# - enabled
+# - output_subdir
+# - export_splits
+# - include_test_split
+#
+# Current placeholder fields in M1:
+# - save_labels
+# - save_metadata
+# - artifact_version
+# - shard_size
+#
+# Placeholder fields are kept for future artifact evolution but do not currently
+# change exporter behavior.
+
 # Whether to enable embedding artifact export
 enabled: true
 
@@ -15,17 +30,25 @@ export_splits:
 # Optional test split (explicit flag to avoid silent behavior)
 include_test_split: false
 
-# Whether to store labels in artifact
-# If dataset has no labels, exporter will ignore automatically
+# Placeholder in M1.
+# Current exporter behavior always writes labels when the dataset provides them.
+# This field does not yet change runtime behavior.
 save_labels: true
 
-# Whether to store per-sample metadata
+# Placeholder in M1.
+# Current exporter behavior always writes per-sample metadata.
+# This field does not yet change runtime behavior.
 save_metadata: true
 
-# Artifact version (for manifest)
+# Placeholder in M1.
+# The manifest version is currently controlled by runtime constants rather than
+# this config field.
 artifact_version: v1
 
-# Reserved for future sharding (M1 = disabled)
+# Placeholder in M1.
+# Export currently writes a single shard only. This field is reserved for future
+# sharded export support and does not yet change runtime behavior.
+#
 # Options:
 #   null → single shard
 #   int  → max samples per shard (future)

@@ -38,7 +38,8 @@ Current status:
 
 Goal:
 
-- eliminate misleading config and schema mismatches in current scope
+- eliminate misleading config and schema mismatches in current scope, and make
+  the helper role of `schema.py` explicit
 
 Tasks:
 
@@ -49,13 +50,38 @@ Tasks:
    - experiment configs
    - evaluator configs
    - runtime readers
-4. Define which config fields are current formal contract versus future placeholders
+4. Keep `schema.py` documented as a non-canonical helper mirror rather than a
+   formal source of truth
 5. Update any docs that still describe outdated config names
 
 Completion criteria:
 
 - current config names match runtime behavior
 - schema helpers no longer contradict current runtime
+- the repository is explicit that `schema.py` is a helper mirror, not the
+  canonical config contract
+
+Current status:
+
+- `schema.py` has been repositioned as a non-canonical helper mirror under
+  option C
+- `max_epochs` vs `num_epochs` drift has been removed from the current config
+  helper layer
+- `debug_model_smoke.yaml` now behaves as a real global preset rather than a
+  descriptive leftover
+- Hydra compose order in `configs/config.yaml` now allows experiment presets to
+  override root defaults as intended
+- standalone evaluator scripts now consistently use nested `enabled` flags,
+  while `round1_frozen` uses root `evaluation.run_*` orchestration flags
+- artifact export config now explicitly separates runtime-effective fields from
+  current placeholders
+- core validation for Phase 1 has been covered by passing tests including:
+  - `tests/test_config.py`
+  - `tests/test_round1_trainer.py`
+  - `tests/test_run_knn_script.py`
+  - `tests/test_run_centroid_script.py`
+  - `tests/test_run_linear_probe_script.py`
+  - `tests/test_run_retrieval.py`
 
 ## Phase 2: Test Drift Cleanup
 

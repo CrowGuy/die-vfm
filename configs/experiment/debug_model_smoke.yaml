@@ -1,12 +1,18 @@
-name: debug_model_smoke
+# @package _global_
 
-runtime:
+experiment:
+  name: debug_model_smoke
+
+train:
+  mode: bootstrap
+
+system:
   seed: 42
   device: cpu
-
-data:
-  batch_size: 4
   num_workers: 0
+
+dataloader:
+  batch_size: 4
 
 model:
   return_debug_outputs: true

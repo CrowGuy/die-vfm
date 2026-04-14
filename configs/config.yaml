@@ -1,4 +1,5 @@
 defaults:
+  - _self_
   - experiment: debug_model_smoke
   - model/backbone: dummy
   - model/pooler: mean
@@ -8,7 +9,6 @@ defaults:
   - evaluation/knn
   - evaluation/centroid
   - evaluation/retrieval
-  - _self_
 
 project:
   name: die_vfm

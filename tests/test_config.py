@@ -6,11 +6,6 @@ from hydra import compose
 from hydra import initialize_config_dir
 
 
-from pathlib import Path
-
-from hydra import compose, initialize_config_dir
-
-
 def test_base_config_loads() -> None:
     """Tests that the Hydra config composes successfully."""
     config_dir = str(Path("configs").resolve())
@@ -21,13 +16,14 @@ def test_base_config_loads() -> None:
     assert cfg.project.name == "die_vfm"
     assert cfg.run.output_root == "runs"
     assert cfg.system.seed == 42
-    assert cfg.system.num_workers == 4
+    assert cfg.system.num_workers == 0
 
     assert cfg.experiment.name == "debug_model_smoke"
     assert cfg.model.backbone.name == "dummy"
     assert cfg.model.pooler.name == "mean"
 
-    assert cfg.train.max_epochs == 1
+    assert cfg.train.mode == "bootstrap"
+    assert cfg.train.num_epochs == 1
     assert cfg.train.log_every_n_steps == 10
     assert cfg.train.run_dataloader_smoke_test is True
     assert cfg.train.run_model_forward_smoke_test is True

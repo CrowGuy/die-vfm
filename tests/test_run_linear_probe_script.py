@@ -111,18 +111,18 @@ def _run_script(repo_root: Path, overrides: list[str]) -> subprocess.CompletedPr
 
 
 def test_run_linear_probe_script_noops_when_disabled(tmp_path: Path) -> None:
-    """Exits cleanly when evaluation.run_linear_probe is false."""
+    """Exits cleanly when evaluation.linear_probe.enabled is false."""
     repo_root = Path(__file__).resolve().parents[1]
 
     completed = _run_script(
         repo_root=repo_root,
         overrides=[
-            "evaluation.run_linear_probe=false",
+            "evaluation.linear_probe.enabled=false",
         ],
     )
 
     assert completed.returncode == 0
-    assert "evaluation.run_linear_probe is false; nothing to do." in completed.stdout
+    assert "Linear probe evaluation is disabled. Skipping." in completed.stdout
 
 
 def test_run_linear_probe_script_end_to_end(tmp_path: Path) -> None:
@@ -135,7 +135,7 @@ def test_run_linear_probe_script_end_to_end(tmp_path: Path) -> None:
     completed = _run_script(
         repo_root=repo_root,
         overrides=[
-            "evaluation.run_linear_probe=true",
+            "evaluation.linear_probe.enabled=true",
             f"evaluation.linear_probe.input.train_split_dir={train_dir}",
             f"evaluation.linear_probe.input.val_split_dir={val_dir}",
             f"evaluation.linear_probe.output.output_dir={output_dir}",
@@ -243,7 +243,7 @@ def test_run_linear_probe_script_skips_optional_outputs(tmp_path: Path) -> None:
     completed = _run_script(
         repo_root=repo_root,
         overrides=[
-            "evaluation.run_linear_probe=true",
+            "evaluation.linear_probe.enabled=true",
             f"evaluation.linear_probe.input.train_split_dir={train_dir}",
             f"evaluation.linear_probe.input.val_split_dir={val_dir}",
             f"evaluation.linear_probe.output.output_dir={output_dir}",

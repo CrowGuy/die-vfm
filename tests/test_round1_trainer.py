@@ -76,6 +76,8 @@ def _build_cfg(tmp_path: Path):
             },
             "evaluation": {
                 "run_linear_probe": True,
+                "run_knn": True,
+                "run_retrieval": True,
                 "linear_probe": {
                     "input": {
                         "normalize_embeddings": False,

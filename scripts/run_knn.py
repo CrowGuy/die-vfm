@@ -102,7 +102,7 @@ def _print_run_summary(output_dir: Path, metrics: dict[str, float]) -> None:
         print(f"Validation top-5 accuracy: {top5_accuracy:.6f}")
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="default")
+@hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
     """Runs artifact-driven kNN evaluation from Hydra config."""
     knn_cfg = _get_knn_config(cfg)
