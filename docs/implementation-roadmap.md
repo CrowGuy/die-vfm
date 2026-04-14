@@ -1,0 +1,214 @@
+# DIE-VFM Implementation Roadmap
+
+## Purpose
+
+This roadmap converts the current open work into an execution order that can be implemented directly. It is designed for the repository's current phase: `Current Spec (M1 / Round1)` stabilization.
+
+## Guiding Principle
+
+The repository should not expand into future-spec work until current-spec contracts, configs, docs, and tests are aligned.
+
+## Phase 0: Governance and Source-of-Truth Alignment
+
+Goal:
+
+- make the repo safe for iterative implementation
+
+Tasks:
+
+1. Establish repo-level execution rules in `AGENTS.md`
+2. Keep `README.md` as an entrypoint, not a full design dump
+3. Treat `docs/current-spec.md` as the current formal product contract
+4. Treat `docs/future-spec.md` as roadmap, not current support
+5. Require doc/config/test updates whenever a current contract changes
+
+Completion criteria:
+
+- repo has a clear execution boundary for agents
+- current and future scope are explicitly separated
+
+## Phase 1: Config and Schema Drift Cleanup
+
+Goal:
+
+- eliminate misleading config and schema mismatches in current scope
+
+Tasks:
+
+1. Reconcile `die_vfm/config/schema.py` with actual runtime config naming
+2. Fix `max_epochs` vs `num_epochs`
+3. Review current config field names across:
+   - `configs/config.yaml`
+   - experiment configs
+   - evaluator configs
+   - runtime readers
+4. Define which config fields are current formal contract versus future placeholders
+5. Update any docs that still describe outdated config names
+
+Completion criteria:
+
+- current config names match runtime behavior
+- schema helpers no longer contradict current runtime
+
+## Phase 2: Test Drift Cleanup
+
+Goal:
+
+- ensure tests describe the current repository rather than older assumptions
+
+Tasks:
+
+1. Audit tests against `docs/testing-spec.md`
+2. Fix tests that still validate outdated config names or contracts
+3. Confirm each current formal subsystem maps to at least one test category
+4. Identify missing tests versus broken tests
+
+Completion criteria:
+
+- tests no longer encode known stale assumptions
+- there is a visible gap list for missing current-scope coverage
+
+## Phase 3: Acceptance Criteria and Test Matrix Hardening
+
+Goal:
+
+- turn current spec into a directly verifiable engineering contract
+
+Tasks:
+
+1. Add or refine acceptance criteria for:
+   - `bootstrap`
+   - `round1_frozen`
+   - embedding export/load
+   - evaluator outputs
+   - M1 checkpoint/resume
+2. Expand `docs/testing-spec.md` if new current-scope expectations are clarified
+3. Map each acceptance criterion to a concrete test or identified test gap
+
+Completion criteria:
+
+- current spec has a direct verification path
+- each current major capability has an explicit acceptance target
+
+## Phase 4: Round1 Runtime Stabilization
+
+Goal:
+
+- make current runtime paths dependable before expanding scope
+
+Tasks:
+
+1. Clarify and preserve the responsibility boundary of `round1_frozen`
+2. Ensure artifact export, evaluator runs, summary writing, and checkpoint writing remain consistent
+3. Fix current runtime correctness issues discovered during test cleanup
+4. Avoid broad trainer refactors unless required for current-scope correctness
+
+Completion criteria:
+
+- `round1_frozen` behavior is coherent and aligned with current docs and tests
+
+## Phase 5: Checkpoint / Resume Current-Scope Stabilization
+
+Goal:
+
+- make the existing M1 checkpoint contract explicit and reliable
+
+Tasks:
+
+1. Validate current payload schema against `docs/checkpoint-resume-spec.md`
+2. Fix drift between documented and actual M1 resume behavior
+3. Improve current-scope tests for:
+   - atomic save
+   - warm start
+   - full resume
+   - latest/best/epoch naming
+4. Keep future resume features out of current support claims until implemented
+
+Completion criteria:
+
+- current checkpoint behavior is documented, implemented, and tested consistently
+
+## Phase 6: `dinov2` Decision Point
+
+Goal:
+
+- remove the ambiguous middle state around `dinov2`
+
+Tasks:
+
+1. Decide whether `dinov2` stays future-only for now or is promoted into current scope
+2. If staying future-only:
+   - keep docs explicit that it is not current formal support
+3. If promoting to current:
+   - wire builder support
+   - validate config integration
+   - add tests
+   - update docs and README
+
+Completion criteria:
+
+- `dinov2` is no longer ambiguously described
+
+## Phase 7: Minimum Trustworthy End-to-End Path
+
+Goal:
+
+- maintain at least one complete current-scope path that the team can trust
+
+Tasks:
+
+1. Ensure there is at least one e2e route covering:
+   - config compose
+   - model build
+   - embedding export
+   - evaluator run
+   - checkpoint write
+2. Prefer a fast dummy-backed path for repeatable validation
+
+Completion criteria:
+
+- the repository has one complete, repeatable, trustworthy current-scope e2e path
+
+## Phase 8: Future-Spec Preparation
+
+Goal:
+
+- prepare for future work without prematurely claiming it
+
+Tasks:
+
+1. Refine future-spec details only after current scope is stable
+2. Keep `round2_ssl`, `round3_supcon`, and richer resume work in future docs until code and tests land
+3. Promote features only through the full path:
+   - runtime
+   - config
+   - tests
+   - docs
+
+Completion criteria:
+
+- future work has a stable launch point and does not destabilize current scope
+
+## Priority Summary
+
+### P0
+
+- Phase 0: governance alignment
+- Phase 1: config/schema drift cleanup
+- Phase 2: test drift cleanup
+
+### P1
+
+- Phase 3: acceptance/test matrix hardening
+- Phase 4: Round1 runtime stabilization
+- Phase 5: checkpoint/resume stabilization
+
+### P2
+
+- Phase 6: `dinov2` decision
+- Phase 7: minimum trustworthy e2e path
+- Phase 8: future-spec preparation
+
+## Execution Rule
+
+Unless the user explicitly redirects work, implementation should proceed phase by phase from top to bottom.

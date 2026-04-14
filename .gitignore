@@ -224,3 +224,5 @@ runs/
 *.log
 
 data
+
+.codex
