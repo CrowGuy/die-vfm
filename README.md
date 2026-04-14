@@ -9,7 +9,7 @@ Die VFM is currently an artifact-centric visual embedding platform for die-level
 The repository currently treats the following as formal, testable capabilities:
 
 - Token-centric model pipeline: `Dataset -> Model -> Embedding Artifact -> Evaluator`
-- Artifact-driven evaluators: `linear_probe`, `knn`, `centroid`, `retrieval`
+- Artifact-driven evaluators: `linear_probe`, `knn`, `centroid`, `retrieval`; `centroid` is currently supported as a standalone evaluator, while `round1_frozen` currently orchestrates `linear_probe`, `knn`, and `retrieval`
 - Runtime modes: `bootstrap`, `round1_frozen`
 - Current supported backbone: `dummy`
 - Current supported poolers: `mean`, `identity`, `attn_pooler_v1`
@@ -71,7 +71,9 @@ python scripts/train.py \
   dataset=dummy
 ```
 
-This path exports train and val embeddings, runs the enabled evaluators from the experiment config, and writes outputs under `runs/my_round1_run/`.
+This path exports train and val embeddings, runs the current Round1 evaluator
+set from the experiment config (`linear_probe`, `knn`, `retrieval`), and writes
+outputs under `runs/my_round1_run/`.
 
 ### Export embeddings
 

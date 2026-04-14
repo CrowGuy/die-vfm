@@ -65,11 +65,20 @@ Behavior:
 - Builds model
 - Applies freeze policy
 - Exports train and val embeddings
-- Runs enabled evaluators
+- Runs enabled Round1 evaluators
 - Writes epoch summary
 - Saves checkpoint set
 
 `round1_frozen` should be treated as the current production experiment runner.
+
+Current `round1_frozen` orchestration scope:
+
+- `linear_probe`
+- `knn`
+- `retrieval`
+
+`centroid` is part of the current standalone evaluator surface, but it is not
+currently orchestrated by `round1_frozen`.
 
 ## Dataset Contract
 
@@ -239,6 +248,13 @@ Evaluator rules:
 - evaluators must not depend on dataloader runtime
 - evaluators must write stable filesystem outputs
 
+Current evaluator positioning:
+
+- `linear_probe`, `knn`, and `retrieval` are current standalone evaluators and
+  are also the evaluator set currently orchestrated by `round1_frozen`
+- `centroid` is current standalone evaluator support, but not part of the
+  current `round1_frozen` orchestration path
+
 Expected evaluator outputs:
 
 - `metrics.yaml`
@@ -305,7 +321,7 @@ Current config expectations:
 
 - `train.mode` selects the current runtime path and defaults to `bootstrap` when omitted by config composition
 - `train.num_epochs` is the current formal epoch-count field for Round1 work
-- `evaluation.run_*` fields are top-level orchestration toggles in the root config and are the control point used by `round1_frozen`
+- `evaluation.run_*` fields are top-level orchestration toggles in the root config and are the control point used by `round1_frozen` for its current evaluator set: `linear_probe`, `knn`, and `retrieval`
 - nested `evaluation.<name>` subtrees hold evaluator-specific input, output, and algorithm settings
 - nested evaluator `enabled` fields are the control point used by standalone evaluator scripts, but do not replace the root current-scope orchestration hierarchy
 

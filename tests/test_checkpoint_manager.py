@@ -20,6 +20,19 @@ class DummyTrainerState:
   global_step: int = 0
 
 
+class DummyGradScaler:
+  """Minimal scaler-like object for checkpoint round-trip tests."""
+
+  def __init__(self, scale: float = 1.0) -> None:
+    self.scale = scale
+
+  def state_dict(self) -> dict[str, float]:
+    return {"scale": self.scale}
+
+  def load_state_dict(self, state_dict: dict[str, float]) -> None:
+    self.scale = float(state_dict["scale"])
+
+
 def _build_model() -> torch.nn.Module:
   model = torch.nn.Linear(4, 2)
   with torch.no_grad():
@@ -253,6 +266,61 @@ def test_load_full_resume_restores_model_trainer_and_optimizer_state(
   assert resumed_optimizer.state_dict()["param_groups"][0]["momentum"] == 0.9
 
 
+def test_load_full_resume_restores_scheduler_and_grad_scaler_state(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  model = _build_model()
+  optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+  lr_scheduler = torch.optim.lr_scheduler.StepLR(
+      optimizer,
+      step_size=1,
+      gamma=0.5,
+  )
+  grad_scaler = DummyGradScaler(scale=128.0)
+
+  optimizer.step()
+  lr_scheduler.step()
+
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=2, global_step=11),
+      epoch=2,
+      global_step=11,
+      optimizer=optimizer,
+      lr_scheduler=lr_scheduler,
+      grad_scaler=grad_scaler,
+  )
+
+  resumed_model = torch.nn.Linear(4, 2)
+  resumed_optimizer = torch.optim.SGD(
+      resumed_model.parameters(),
+      lr=1.0,
+      momentum=0.0,
+  )
+  resumed_scheduler = torch.optim.lr_scheduler.StepLR(
+      resumed_optimizer,
+      step_size=1,
+      gamma=0.1,
+  )
+  resumed_grad_scaler = DummyGradScaler(scale=1.0)
+  resumed_trainer_state = DummyTrainerState()
+
+  payload = manager.load_full_resume(
+      checkpoint_path=manager.get_latest_checkpoint_path(),
+      model=resumed_model,
+      trainer_state=resumed_trainer_state,
+      optimizer=resumed_optimizer,
+      lr_scheduler=resumed_scheduler,
+      grad_scaler=resumed_grad_scaler,
+  )
+
+  assert payload["epoch"] == 2
+  assert payload["global_step"] == 11
+  assert resumed_scheduler.state_dict() == lr_scheduler.state_dict()
+  assert resumed_grad_scaler.scale == 128.0
+
+
 def test_load_full_resume_raises_when_optimizer_state_missing(
     tmp_path: Path,
 ) -> None:
@@ -276,6 +344,70 @@ def test_load_full_resume_raises_when_optimizer_state_missing(
         model=resumed_model,
         trainer_state=DummyTrainerState(),
         optimizer=resumed_optimizer,
+    )
+
+
+def test_load_full_resume_raises_when_scheduler_state_missing(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  model = _build_model()
+  optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=1, global_step=2),
+      epoch=1,
+      global_step=2,
+      optimizer=optimizer,
+      lr_scheduler=None,
+  )
+
+  resumed_model = torch.nn.Linear(4, 2)
+  resumed_optimizer = torch.optim.SGD(resumed_model.parameters(), lr=0.1)
+  resumed_scheduler = torch.optim.lr_scheduler.StepLR(
+      resumed_optimizer,
+      step_size=1,
+      gamma=0.5,
+  )
+
+  with pytest.raises(CheckpointValidationError):
+    manager.load_full_resume(
+        checkpoint_path=manager.get_latest_checkpoint_path(),
+        model=resumed_model,
+        trainer_state=DummyTrainerState(),
+        optimizer=resumed_optimizer,
+        lr_scheduler=resumed_scheduler,
+    )
+
+
+def test_load_full_resume_raises_when_grad_scaler_state_missing(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  model = _build_model()
+  optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=1, global_step=2),
+      epoch=1,
+      global_step=2,
+      optimizer=optimizer,
+      grad_scaler=None,
+  )
+
+  resumed_model = torch.nn.Linear(4, 2)
+  resumed_optimizer = torch.optim.SGD(resumed_model.parameters(), lr=0.1)
+  resumed_grad_scaler = DummyGradScaler(scale=1.0)
+
+  with pytest.raises(CheckpointValidationError):
+    manager.load_full_resume(
+        checkpoint_path=manager.get_latest_checkpoint_path(),
+        model=resumed_model,
+        trainer_state=DummyTrainerState(),
+        optimizer=resumed_optimizer,
+        grad_scaler=resumed_grad_scaler,
     )
 
 

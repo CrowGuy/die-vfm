@@ -6,23 +6,28 @@ from hydra import compose
 from hydra import initialize_config_dir
 
 
-def test_base_config_loads() -> None:
-    """Tests that the Hydra config composes successfully."""
+def _compose_config(*, overrides: list[str] | None = None):
+    """Composes the Hydra config for config-surface tests."""
     config_dir = str(Path("configs").resolve())
 
     with initialize_config_dir(version_base=None, config_dir=config_dir):
-        cfg = compose(config_name="config")
+        return compose(config_name="config", overrides=overrides or [])
+
+
+def test_base_config_loads() -> None:
+    """Tests that the base Hydra config composes and exposes current sections."""
+    cfg = _compose_config()
 
     assert cfg.project.name == "die_vfm"
     assert cfg.run.output_root == "runs"
     assert cfg.system.seed == 42
-    assert cfg.system.num_workers == 0
 
-    assert cfg.experiment.name == "debug_model_smoke"
+    assert isinstance(cfg.experiment.name, str)
+    assert cfg.experiment.name
     assert cfg.model.backbone.name == "dummy"
     assert cfg.model.pooler.name == "mean"
 
-    assert cfg.train.mode == "bootstrap"
+    assert cfg.train.mode in {"bootstrap", "round1_frozen"}
     assert cfg.train.num_epochs == 1
     assert cfg.train.log_every_n_steps == 10
     assert cfg.train.run_dataloader_smoke_test is True
@@ -45,3 +50,15 @@ def test_base_config_loads() -> None:
 
     assert cfg.evaluation.run_linear_probe is False
     assert cfg.evaluation.run_knn is False
+
+
+def test_debug_model_smoke_preset_overrides_expected_root_fields() -> None:
+    """Tests the explicit debug_model_smoke preset rather than default selection."""
+    cfg = _compose_config(overrides=["experiment=debug_model_smoke"])
+
+    assert cfg.experiment.name == "debug_model_smoke"
+    assert cfg.train.mode == "bootstrap"
+    assert cfg.system.device == "cpu"
+    assert cfg.system.num_workers == 0
+    assert cfg.dataloader.batch_size == 4
+    assert cfg.model.return_debug_outputs is True

@@ -93,6 +93,13 @@ Current evaluator scope:
 - centroid
 - retrieval
 
+Current positioning:
+
+- `linear_probe`, `knn`, and `retrieval` should be covered both as standalone
+  evaluators and as the evaluator set orchestrated by `round1_frozen`
+- `centroid` should be covered as current standalone evaluator support; it is
+  not currently part of `round1_frozen` orchestration coverage
+
 Required coverage:
 
 - evaluator core logic

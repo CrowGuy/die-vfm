@@ -84,7 +84,6 @@ Current status:
   - `tests/test_run_retrieval.py`
 
 ## Phase 2: Test Drift Cleanup
-
 Goal:
 
 - ensure tests describe the current repository rather than older assumptions
@@ -100,6 +99,35 @@ Completion criteria:
 
 - tests no longer encode known stale assumptions
 - there is a visible gap list for missing current-scope coverage
+
+Current decision note:
+
+- `centroid` remains current standalone evaluator support
+- current `round1_frozen` orchestration is limited to `linear_probe`, `knn`,
+  and `retrieval`
+- docs and tests should preserve this distinction rather than expanding
+  `round1_frozen` only to match wording
+
+Current status:
+
+- stale assumptions in `tests/test_config.py` have been reduced by separating
+  base config composition from explicit `debug_model_smoke` preset behavior
+- `tests/test_round1_trainer.py` has been cleaned up to avoid placeholder
+  artifact config assumptions and now covers `round1_frozen` evaluator
+  disable-path behavior for root `evaluation.run_*` flags
+- `tests/test_checkpoint_manager.py` now covers current-scope
+  `lr_scheduler` and `grad_scaler` full-resume behavior, including missing-state
+  rejection
+- `tests/test_export_embeddings_script.py` now provides script-level coverage
+  for disabled export and successful train/val artifact export
+- current spec, testing docs, and tests now agree that `centroid` is current
+  standalone evaluator support rather than part of the current
+  `round1_frozen` orchestration path
+- Phase 2 validation has been exercised by passing tests including:
+  - `tests/test_config.py`
+  - `tests/test_round1_trainer.py`
+  - `tests/test_checkpoint_manager.py`
+  - `tests/test_export_embeddings_script.py`
 
 ## Phase 3: Acceptance Criteria and Test Matrix Hardening
 
