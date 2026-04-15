@@ -57,7 +57,12 @@ class SystemConfig:
 
 @dataclass(frozen=True)
 class ResumeConfig:
-    """Configuration for checkpoint resume behavior."""
+    """Configuration for checkpoint resume behavior.
+
+    This remains part of the current root config surface for bootstrap and
+    future training-centric rounds. It is not part of the formal
+    `round1_frozen` single-shot contract.
+    """
 
     enabled: bool = False
     mode: ResumeMode = "full_resume"
@@ -67,7 +72,14 @@ class ResumeConfig:
 
 @dataclass(frozen=True)
 class TrainConfig:
-    """Current-scope training and orchestration configuration."""
+    """Current root train/orchestration config surface.
+
+    Important:
+        `num_epochs`, `selection_metric`, and `resume` remain in the root
+        config surface for bootstrap compatibility and transitional runtime
+        support, but they are not part of the formal `round1_frozen`
+        single-shot contract defined by `docs/current-spec.md`.
+    """
 
     mode: TrainMode = "bootstrap"
     num_epochs: int = 1

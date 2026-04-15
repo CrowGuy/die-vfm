@@ -24,6 +24,10 @@ system:
   num_workers: 4
 
 train:
+  # Transitional root train surface:
+  # - `num_epochs`, `selection_metric`, and `resume` remain for bootstrap scope
+  #   and current runtime compatibility
+  # - they are not part of the formal `round1_frozen` single-shot contract
   num_epochs: 1
   freeze_backbone: false
   freeze_pooler: false

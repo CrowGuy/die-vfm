@@ -13,7 +13,7 @@ from omegaconf import DictConfig, OmegaConf
 from die_vfm.datasets.builder import build_dataloader
 from die_vfm.models.builder import build_model
 from die_vfm.trainer import CheckpointManager
-from die_vfm.trainer import Round1FrozenTrainer
+from die_vfm.trainer import Round1FrozenRunner
 from die_vfm.trainer import TrainerState
 
 LOGGER = logging.getLogger(__name__)
@@ -281,12 +281,11 @@ def run_dataloader_smoke_test(
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
-    """Main training entrypoint."""
+    """Main runtime entrypoint."""
     run_dir = resolve_run_dir(cfg)
     setup_logging(run_dir)
-    checkpoint_manager = CheckpointManager(run_dir / "checkpoints")
 
-    LOGGER.info("Starting training entrypoint.")
+    LOGGER.info("Starting runtime entrypoint.")
     LOGGER.info("Resolved run directory: %s", run_dir)
 
     set_random_seed(int(cfg.system.seed))
@@ -298,7 +297,8 @@ def main(cfg: DictConfig) -> None:
     mode = str(getattr(cfg.train, "mode", "bootstrap"))
 
     if mode == "bootstrap":
-        LOGGER.info("Starting training bootstrap.")
+        LOGGER.info("Starting bootstrap runtime.")
+        checkpoint_manager = CheckpointManager(run_dir / "checkpoints")
         if bool(cfg.train.run_dataloader_smoke_test):
             run_dataloader_smoke_test(
                 cfg=cfg,
@@ -309,13 +309,12 @@ def main(cfg: DictConfig) -> None:
         return
 
     if mode == "round1_frozen":
-        trainer = Round1FrozenTrainer(
+        runner = Round1FrozenRunner(
             cfg=cfg,
             run_dir=run_dir,
-            checkpoint_manager=checkpoint_manager,
         )
-        trainer.run()
-        LOGGER.info("Round1 frozen mode completed successfully.")
+        runner.run()
+        LOGGER.info("Round1 frozen runner completed successfully.")
         return
 
     raise ValueError(f"Unsupported train.mode: {mode}")

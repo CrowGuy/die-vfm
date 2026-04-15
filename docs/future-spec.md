@@ -42,6 +42,12 @@ Expected characteristics:
 - EMA teacher continuity
 - strong checkpoint/resume requirements
 
+Expected parameter-update boundary:
+
+- `round2_ssl` is the first stage where model weights are expected to be updated on domain data
+- selective freeze policies are expected here (for example: freeze parts of backbone while updating selected backbone blocks, pooler, projector, or SSL heads)
+- freeze policy should be explicit in config and reflected in checkpoint metadata
+
 ## Round3 SupCon Direction
 
 `round3_supcon` is intended for supervised contrastive fine-tuning on labeled subsets.
@@ -52,6 +58,23 @@ Expected characteristics:
 - optional classifier head
 - optimizer and scheduler persistence
 - stronger compatibility checks across resumes
+
+Expected parameter-update boundary:
+
+- `round3_supcon` continues gradient-based adaptation with labels
+- selective layer freezing and trainable-subset updates are expected controls in this stage as well
+- this stage may tighten which modules are trainable compared with `round2_ssl`, depending on label volume and overfitting risk
+
+## Round-Boundary Rule
+
+To avoid semantic drift between rounds:
+
+- `round1_frozen` remains non-training orchestration for embedding export and offline evaluation
+- `round1_frozen` remains single-shot and does not carry epoch/resume semantics
+- any workflow that updates model weights belongs to `round2_ssl` or later
+- epoch/resume and checkpoint-continuation semantics for adaptation stages belong
+  to `round2_ssl` or later
+- selective-layer freeze plus trainable-subset updates must not be claimed as current Round1 capability until promoted through runtime, config, tests, and docs
 
 ## Backbone Roadmap
 

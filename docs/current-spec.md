@@ -15,7 +15,7 @@ Current scope is intentionally narrow:
 - Artifact-driven evaluation
 - `bootstrap` runtime flow
 - `round1_frozen` runtime flow
-- M1 checkpoint/resume behavior
+- M1 checkpoint/resume behavior for `bootstrap`
 
 The current spec does not formally include SSL training, supervised contrastive training, or advanced distributed resume guarantees.
 
@@ -56,9 +56,9 @@ Behavior:
 
 Purpose:
 
-- Frozen embedding export
+- Single-shot frozen embedding export
 - Offline artifact-driven evaluation
-- Per-epoch summary and checkpoint writing
+- Run-level summary writing
 
 Behavior:
 
@@ -66,10 +66,18 @@ Behavior:
 - Applies freeze policy
 - Exports train and val embeddings
 - Runs enabled Round1 evaluators
-- Writes epoch summary
-- Saves checkpoint set
+- Writes run summary
 
 `round1_frozen` should be treated as the current production experiment runner.
+
+Runtime semantics:
+
+- `round1_frozen` is an orchestration runner, not a gradient-training loop
+- current runtime does not include loss/backward/optimizer-step/scheduler-step in this mode
+- `round1_frozen` is a single-shot flow and does not define epoch-based continuation semantics
+- `freeze_backbone` / `freeze_pooler` are current freeze-policy controls, but this mode does not update model weights even when those flags are disabled
+- `round1_frozen` does not define resume semantics
+- `round1_frozen` does not define training-style checkpoint semantics
 
 Current `round1_frozen` orchestration scope:
 
@@ -79,6 +87,10 @@ Current `round1_frozen` orchestration scope:
 
 `centroid` is part of the current standalone evaluator surface, but it is not
 currently orchestrated by `round1_frozen`.
+
+Boundary rule:
+
+- any requirement that updates model weights on domain data (including selective layer freeze plus trainable subset updates) is out of current Round1 scope and belongs to future `round2_ssl` or `round3_supcon`
 
 ## Dataset Contract
 
@@ -268,7 +280,8 @@ Optional outputs depending on evaluator:
 
 ## Checkpoint / Resume Current Scope
 
-Current checkpoint behavior is M1-scoped rather than the future full contract.
+Current checkpoint behavior is M1-scoped and currently applies to `bootstrap`,
+not `round1_frozen`.
 
 Current formal checkpoint set:
 
@@ -320,7 +333,9 @@ Under the current repository policy:
 Current config expectations:
 
 - `train.mode` selects the current runtime path and defaults to `bootstrap` when omitted by config composition
-- `train.num_epochs` is the current formal epoch-count field for Round1 work
+- `train.num_epochs` is a training-stage control and is not part of the
+  `round1_frozen` single-shot contract
+- `train.resume.*` is not part of the `round1_frozen` single-shot contract
 - `evaluation.run_*` fields are top-level orchestration toggles in the root config and are the control point used by `round1_frozen` for its current evaluator set: `linear_probe`, `knn`, and `retrieval`
 - nested `evaluation.<name>` subtrees hold evaluator-specific input, output, and algorithm settings
 - nested evaluator `enabled` fields are the control point used by standalone evaluator scripts, but do not replace the root current-scope orchestration hierarchy
@@ -340,6 +355,9 @@ The following belong to future spec, not current spec:
 
 - `round2_ssl`
 - `round3_supcon`
+- selective-layer freezing with trainable-subset weight updates on domain data
+- epoch-based continuation semantics for `round1_frozen`
+- `round1_frozen` resume semantics
 - full EMA-aware resume
 - same-world-size continuity guarantees
 - token-weight artifact persistence

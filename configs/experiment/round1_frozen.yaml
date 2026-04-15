@@ -1,5 +1,13 @@
 # @package _global_
 
+# Current Round1 contract:
+# - single-shot frozen inference/evaluation flow
+# - no Round1-specific `num_epochs`
+# - no Round1-specific `resume`
+#
+# Training-style controls may still exist in the root config surface for
+# bootstrap/runtime compatibility, but they are intentionally not set here.
+
 defaults:
   - override /hydra/job_logging: disabled
   - override /hydra/hydra_logging: disabled
@@ -9,15 +17,8 @@ run:
 
 train:
   mode: round1_frozen
-  num_epochs: 1
   freeze_backbone: true
   freeze_pooler: true
-  selection_metric: knn.top1_accuracy
-  resume:
-    enabled: false
-    checkpoint_path: null
-    mode: full_resume
-    auto_resume_latest: false
 
 evaluation:
   run_linear_probe: true

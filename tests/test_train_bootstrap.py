@@ -13,7 +13,7 @@ def test_train_bootstrap_runs_dataloader_and_model_smoke_test(
 
     command = [
         sys.executable,
-        "scripts/train.py",
+        "scripts/run.py",
         f"run.output_root={tmp_path}",
         f"run.run_name={run_name}",
         "system.num_workers=0",
@@ -33,7 +33,7 @@ def test_train_bootstrap_runs_dataloader_and_model_smoke_test(
     )
 
     assert result.returncode == 0, (
-        f"train.py failed with stderr:\n{result.stderr}\n"
+        f"run.py failed with stderr:\n{result.stderr}\n"
         f"stdout:\n{result.stdout}"
     )
 
@@ -45,7 +45,8 @@ def test_train_bootstrap_runs_dataloader_and_model_smoke_test(
     assert log_path.exists()
 
     log_text = log_path.read_text(encoding="utf-8")
-    assert "Starting training bootstrap." in log_text
+    assert "Starting runtime entrypoint." in log_text
+    assert "Starting bootstrap runtime." in log_text
     assert "Dataloader smoke test passed." in log_text
     assert "Batch image shape: (4, 3, 224, 224)" in log_text
     assert "Batch label shape: (4,)" in log_text
@@ -83,7 +84,7 @@ def test_train_bootstrap_writes_checkpoint_set(tmp_path: Path) -> None:
   run_name = "pytest-train-checkpoint-save"
   command = [
       sys.executable,
-      "scripts/train.py",
+      "scripts/run.py",
       f"run.output_root={tmp_path}",
       f"run.run_name={run_name}",
       "system.num_workers=0",
@@ -102,7 +103,7 @@ def test_train_bootstrap_writes_checkpoint_set(tmp_path: Path) -> None:
   )
 
   assert result.returncode == 0, (
-      f"train.py failed with stderr:\n{result.stderr}\n"
+      f"run.py failed with stderr:\n{result.stderr}\n"
       f"stdout:\n{result.stdout}"
   )
 
@@ -121,7 +122,7 @@ def test_train_bootstrap_auto_resume_latest_full_resume(
 
   first_command = [
       sys.executable,
-      "scripts/train.py",
+      "scripts/run.py",
       f"run.output_root={tmp_path}",
       f"run.run_name={run_name}",
       "system.num_workers=0",
@@ -145,7 +146,7 @@ def test_train_bootstrap_auto_resume_latest_full_resume(
 
   second_command = [
       sys.executable,
-      "scripts/train.py",
+      "scripts/run.py",
       f"run.output_root={tmp_path}",
       f"run.run_name={run_name}",
       "system.num_workers=0",
@@ -192,7 +193,7 @@ def test_train_bootstrap_explicit_warm_start_checkpoint(
 
     source_command = [
         sys.executable,
-        "scripts/train.py",
+        "scripts/run.py",
         f"run.output_root={tmp_path}",
         f"run.run_name={source_run_name}",
         "system.num_workers=0",
@@ -221,7 +222,7 @@ def test_train_bootstrap_explicit_warm_start_checkpoint(
 
     target_command = [
         sys.executable,
-        "scripts/train.py",
+        "scripts/run.py",
         f"run.output_root={tmp_path}",
         f"run.run_name={target_run_name}",
         "system.num_workers=0",

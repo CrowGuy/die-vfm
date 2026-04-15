@@ -29,7 +29,7 @@ The current repository treats the following as formal, testable capabilities:
   - `linear_probe`
   - `knn`
   - `retrieval`
-- M1 checkpoint and resume behavior
+- M1 checkpoint/resume utilities (bootstrap scope)
 
 ## Test Layers
 
@@ -73,7 +73,7 @@ These tests validate the current smoke entrypoint behavior.
 
 Required coverage:
 
-- `scripts/train.py` in `bootstrap` mode
+- `scripts/run.py` in `bootstrap` mode
 - dataloader smoke path
 - model forward smoke path
 - run directory creation
@@ -134,7 +134,7 @@ Primary goal:
 
 ## 6. Checkpoint Tests
 
-These tests validate current M1 checkpoint behavior.
+These tests validate current M1 checkpoint behavior in bootstrap scope.
 
 Required coverage:
 
@@ -238,7 +238,7 @@ Coverage status:
 
 Current capability:
 
-- `scripts/train.py` in `bootstrap` mode exercises the minimum runnable environment path
+- `scripts/run.py` in `bootstrap` mode exercises the minimum runnable environment path
 
 Acceptance criteria:
 
@@ -327,29 +327,30 @@ Coverage status:
 
 Current capability:
 
-- `round1_frozen` exports embeddings, orchestrates the current Round1 evaluator set, writes summaries, and saves checkpoints
+- `round1_frozen` exports embeddings, orchestrates the current Round1 evaluator set, and writes run summaries as a single-shot flow
 
 Acceptance criteria:
 
-- the runtime writes train and val embeddings for each epoch
+- the runtime writes train and val embeddings for one run execution
 - the current Round1 evaluator set (`linear_probe`, `knn`, `retrieval`) is executed when enabled
 - root `evaluation.run_*` flags disable the corresponding Round1 evaluator path
-- epoch summaries and checkpoint files are written
-- full resume continues from the next epoch within current M1 scope
+- run summary is written with evaluator execution metadata
+- Round1 contract does not rely on `train.num_epochs` or `train.resume.*`
+- Round1 contract does not rely on training-style checkpoint continuation semantics
 
 Existing tests:
 
-- `tests/test_round1_trainer.py`
+- `tests/test_round1_runner.py`
 
 Coverage status:
 
 - covered
 
-### 8. M1 Checkpoint and Resume
+### 8. M1 Checkpoint and Resume Utilities (Bootstrap Scope)
 
 Current capability:
 
-- M1 checkpoint save/load, `warm_start`, and `full_resume` behavior work within current scope
+- M1 checkpoint save/load, `warm_start`, and `full_resume` utilities work for bootstrap scope
 
 Acceptance criteria:
 

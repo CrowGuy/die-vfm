@@ -2,7 +2,7 @@
 
 **Die-level Visual Foundation Model platform.**
 
-Die VFM is currently an artifact-centric visual embedding platform for die-level image experiments. The current implementation focuses on a token-centric model contract, embedding export, artifact-driven evaluators, and M1 checkpoint/resume behavior for `bootstrap` and `round1_frozen`.
+Die VFM is currently an artifact-centric visual embedding platform for die-level image experiments. The current implementation focuses on a token-centric model contract, embedding export, artifact-driven evaluators, and M1 checkpoint/resume behavior for `bootstrap` scope.
 
 ## Current Status
 
@@ -14,9 +14,10 @@ The repository currently treats the following as formal, testable capabilities:
 - Current supported backbone: `dummy`
 - Current supported poolers: `mean`, `identity`, `attn_pooler_v1`
 - Single-shard M1 embedding artifact layout: `manifest.yaml` plus `part-00000.pt`
-- M1 checkpoint set: `latest.pt`, `best.pt` when selected, `epoch_xxxx.pt`
+- `round1_frozen` is a single-shot inference/evaluation flow and does not define epoch/resume continuation semantics
+- `latest.pt`, `best.pt`, and `epoch_xxxx.pt` are currently part of the `bootstrap` checkpoint flow, not the formal `round1_frozen` contract.
 
-The repository does not yet treat `round2_ssl`, `round3_supcon`, or a fully featured `full_resume` contract as current production scope.
+The repository does not yet treat `round2_ssl`, `round3_supcon`, or training-stage full-resume guarantees as current production scope.
 
 ## Documentation
 
@@ -48,7 +49,7 @@ pip install -e .[dev]
 ### Run bootstrap smoke test
 
 ```bash
-python scripts/train.py \
+python scripts/run.py \
   system.device=cpu \
   system.num_workers=0 \
   model/backbone=dummy \
@@ -61,7 +62,7 @@ This path exercises the default `bootstrap` flow and writes run artifacts, smoke
 ### Run Round1 frozen flow
 
 ```bash
-python scripts/train.py \
+python scripts/run.py \
   experiment=round1_frozen \
   run.run_name=my_round1_run \
   system.device=cpu \
@@ -73,7 +74,7 @@ python scripts/train.py \
 
 This path exports train and val embeddings, runs the current Round1 evaluator
 set from the experiment config (`linear_probe`, `knn`, `retrieval`), and writes
-outputs under `runs/my_round1_run/`.
+single-run outputs under `runs/my_round1_run/`.
 
 ### Export embeddings
 
@@ -116,7 +117,7 @@ die-vfm/
 │   ├── datasets/                # Dataset adapters and dataloader builder
 │   ├── evaluator/               # Artifact-driven evaluators
 │   ├── models/                  # Backbone, pooler, top-level model
-│   └── trainer/                 # Bootstrap and Round1 orchestration
+│   └── trainer/                 # Bootstrap checkpoint helpers and Round1 runner
 ├── docs/                        # Specs and engineering guidance
 ├── scripts/                     # CLI entrypoints
 └── tests/                       # Test suite
@@ -134,4 +135,4 @@ die-vfm/
 - `dummy` is the only formally supported backbone in the current spec.
 - `dinov2` exists in the codebase but is not yet fully wired as a current formal capability.
 - `bootstrap` is the implicit default when `train.mode` is not set by the selected config composition.
-- The checkpoint system already supports `warm_start` and M1-style `full_resume`, but future rounds require a richer resume contract.
+- Round1 is currently positioned as a single-shot inference/evaluation runner; training-stage resume semantics are future Round2+ scope.

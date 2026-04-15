@@ -77,7 +77,7 @@ Current status:
   current placeholders
 - core validation for Phase 1 has been covered by passing tests including:
   - `tests/test_config.py`
-  - `tests/test_round1_trainer.py`
+  - `tests/test_round1_runner.py`
   - `tests/test_run_knn_script.py`
   - `tests/test_run_centroid_script.py`
   - `tests/test_run_linear_probe_script.py`
@@ -112,7 +112,7 @@ Current status:
 
 - stale assumptions in `tests/test_config.py` have been reduced by separating
   base config composition from explicit `debug_model_smoke` preset behavior
-- `tests/test_round1_trainer.py` has been cleaned up to avoid placeholder
+- `tests/test_round1_runner.py` has been cleaned up to avoid placeholder
   artifact config assumptions and now covers `round1_frozen` evaluator
   disable-path behavior for root `evaluation.run_*` flags
 - `tests/test_checkpoint_manager.py` now covers current-scope
@@ -125,7 +125,7 @@ Current status:
   `round1_frozen` orchestration path
 - Phase 2 validation has been exercised by passing tests including:
   - `tests/test_config.py`
-  - `tests/test_round1_trainer.py`
+  - `tests/test_round1_runner.py`
   - `tests/test_checkpoint_manager.py`
   - `tests/test_export_embeddings_script.py`
 
@@ -167,46 +167,79 @@ Current status:
   `export_splits`, `include_test_split`, and placeholder no-op fields
 - standalone evaluator coverage has been hardened with subprocess CLI
   end-to-end tests for `knn`, `centroid`, and `retrieval`
-- current known Phase 3 P1 gaps:
-  - none currently tracked for existing M1/Round1 capabilities
 
 ## Phase 4: Round1 Runtime Stabilization
 
+Status:
+
+- completed
+
 Goal:
 
-- make current runtime paths dependable before expanding scope
+- complete Round1 semantic cleanup so `round1_frozen` is unambiguously a
+  single-shot inference/evaluation runner
 
 Tasks:
 
-1. Clarify and preserve the responsibility boundary of `round1_frozen`
-2. Ensure artifact export, evaluator runs, summary writing, and checkpoint writing remain consistent
-3. Fix current runtime correctness issues discovered during test cleanup
-4. Avoid broad trainer refactors unless required for current-scope correctness
+1. Freeze the Round1 contract as single-shot:
+   no `train.num_epochs`, no `train.resume.*`, no Round1 checkpoint
+   continuation semantics
+2. Update spec-facing docs (`current-spec`, `future-spec`, `testing-spec`,
+   `README`) to reflect the Round1 single-shot boundary and Round2+ training
+   boundary
+3. Clean up Round1 config surface so training-only controls are not presented
+   as Round1 runtime controls
+4. Refactor Round1 runtime orchestration to remove epoch/resume/checkpoint
+   continuation assumptions and keep only inference/evaluation orchestration
+5. Rewrite Round1 acceptance tests to validate single-shot behavior and
+   fail-fast boundary checks
 
 Completion criteria:
 
-- `round1_frozen` behavior is coherent and aligned with current docs and tests
+- `round1_frozen` is consistently treated as a single-shot non-training runner
+  across docs, config expectations, runtime behavior, and tests
+- Round1 no longer exposes epoch/resume semantics to users
+- Round1 outputs (artifacts and summaries) are coherent and diagnosable without
+  training-style continuation semantics
+
+Current status:
+
+- Round1 runtime has been refactored into a dedicated single-shot runner
+  (`Round1FrozenRunner`) and no longer uses epoch/resume/checkpoint-continuation
+  semantics
+- Round1 acceptance coverage now maps to `tests/test_round1_runner.py` and
+  validates run-level artifact output, evaluator enable/disable behavior, and
+  fail-fast boundaries
+- entrypoint naming drift has been reduced by moving the runtime entry script
+  from `scripts/train.py` to `scripts/run.py`, with README/testing references
+  updated accordingly
+- current-spec docs, testing spec, and runtime behavior now align on the
+  Round1 single-shot contract
 
 ## Phase 5: Checkpoint / Resume Current-Scope Stabilization
 
 Goal:
 
-- make the existing M1 checkpoint contract explicit and reliable
+- make the M1 checkpoint contract explicit and reliable for bootstrap scope
+  while keeping training-centric resume semantics in future rounds
 
 Tasks:
 
-1. Validate current payload schema against `docs/checkpoint-resume-spec.md`
-2. Fix drift between documented and actual M1 resume behavior
+1. Validate bootstrap checkpoint payload schema against
+   `docs/checkpoint-resume-spec.md`
+2. Fix drift between documented and actual bootstrap resume behavior
 3. Improve current-scope tests for:
    - atomic save
    - warm start
    - full resume
    - latest/best/epoch naming
-4. Keep future resume features out of current support claims until implemented
+4. Keep Round1 single-shot semantics and future training-resume semantics
+   clearly separated until Round2/Round3 implementation lands
 
 Completion criteria:
 
-- current checkpoint behavior is documented, implemented, and tested consistently
+- bootstrap checkpoint behavior is documented, implemented, and tested
+  consistently without reintroducing Round1 semantic drift
 
 ## Phase 6: `dinov2` Decision Point
 
@@ -277,6 +310,7 @@ Completion criteria:
 - Phase 1: config/schema drift cleanup
 - Phase 2: test drift cleanup
 - Phase 3: acceptance/test matrix hardening
+- Phase 4: Round1 runtime stabilization
 
 ### P0
 
@@ -284,7 +318,6 @@ Completion criteria:
 
 ### P1
 
-- Phase 4: Round1 runtime stabilization
 - Phase 5: checkpoint/resume stabilization
 
 ### P2

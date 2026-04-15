@@ -9,7 +9,6 @@ This document defines the checkpoint and resume contract for the current reposit
 Checkpoint and resume are currently required for:
 
 - `bootstrap`
-- `round1_frozen`
 
 The current implementation supports:
 
@@ -20,7 +19,7 @@ The current implementation supports:
 
 ## Current Checkpoint Set
 
-Each run currently writes:
+Bootstrap runs currently write:
 
 - `latest.pt`
 - `best.pt` when applicable
@@ -88,7 +87,7 @@ Behavior:
 
 Purpose:
 
-- continue a current-scope run using saved state
+- continue a bootstrap-scope run using saved state
 
 Behavior:
 
@@ -129,6 +128,7 @@ The current repository does not yet formally guarantee:
 - sampler or data-loader state restoration
 - corrupted `latest.pt` fallback to prior periodic checkpoint
 - full config compatibility checks
+- `round1_frozen` checkpoint/resume semantics as part of the Round1 contract
 - same-world-size continuity guarantees across future distributed modes
 
 ## Future Direction

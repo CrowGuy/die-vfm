@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+import yaml
 from omegaconf import OmegaConf
 
-from die_vfm.trainer import CheckpointManager
-from die_vfm.trainer import Round1FrozenTrainer
-from die_vfm.trainer.round1_trainer import Round1EpochArtifacts
-import die_vfm.trainer.round1_trainer as round1_trainer_module
+from die_vfm.trainer import Round1FrozenRunner
+from die_vfm.trainer.round1_runner import Round1RunArtifacts
+import die_vfm.trainer.round1_runner as round1_runner_module
 
 
 def _build_cfg(tmp_path: Path):
@@ -143,23 +144,21 @@ def _build_cfg(tmp_path: Path):
     )
 
 
-def _build_epoch_artifacts(tmp_path: Path) -> Round1EpochArtifacts:
-    epoch_dir = tmp_path / "round1" / "epoch_0000"
-    return Round1EpochArtifacts(
-        epoch_dir=epoch_dir,
-        train_embedding_dir=epoch_dir / "embeddings" / "train",
-        val_embedding_dir=epoch_dir / "embeddings" / "val",
-        linear_probe_dir=epoch_dir / "evaluation" / "linear_probe",
-        knn_dir=epoch_dir / "evaluation" / "knn",
-        retrieval_dir=epoch_dir / "evaluation" / "retrieval",
-        summary_yaml_path=epoch_dir / "round1_summary.yaml",
-        summary_json_path=epoch_dir / "round1_summary.json",
+def _build_run_artifacts(tmp_path: Path) -> Round1RunArtifacts:
+    round1_dir = tmp_path / "round1"
+    return Round1RunArtifacts(
+        round1_dir=round1_dir,
+        train_embedding_dir=round1_dir / "embeddings" / "train",
+        val_embedding_dir=round1_dir / "embeddings" / "val",
+        linear_probe_dir=round1_dir / "evaluation" / "linear_probe",
+        knn_dir=round1_dir / "evaluation" / "knn",
+        retrieval_dir=round1_dir / "evaluation" / "retrieval",
+        summary_yaml_path=round1_dir / "round1_summary.yaml",
+        summary_json_path=round1_dir / "round1_summary.json",
     )
 
-# -----------------------------
-# Test 1: full round1 run
-# -----------------------------
-def test_round1_trainer_writes_artifacts_and_checkpoints(
+
+def test_round1_runner_writes_run_level_artifacts_and_summary(
     tmp_path: Path,
 ) -> None:
     cfg = _build_cfg(tmp_path)
@@ -167,199 +166,231 @@ def test_round1_trainer_writes_artifacts_and_checkpoints(
     run_dir = Path(cfg.run.output_root) / cfg.run.run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    checkpoint_manager = CheckpointManager(run_dir / "checkpoints")
-
-    trainer = Round1FrozenTrainer(
+    runner = Round1FrozenRunner(
         cfg=cfg,
         run_dir=run_dir,
-        checkpoint_manager=checkpoint_manager,
     )
 
-    metrics = trainer.run()
+    metrics = runner.run()
 
-    epoch_dir = run_dir / "round1" / "epoch_0000"
+    round1_dir = run_dir / "round1"
 
-    # ---- metrics ----
     assert "linear_probe.accuracy" in metrics
+    assert (round1_dir / "embeddings" / "train").exists()
+    assert (round1_dir / "embeddings" / "val").exists()
+    assert (round1_dir / "evaluation" / "linear_probe").exists()
+    assert (round1_dir / "evaluation" / "knn").exists()
+    assert (round1_dir / "evaluation" / "retrieval").exists()
+    assert (round1_dir / "round1_summary.yaml").exists()
+    assert (round1_dir / "round1_summary.json").exists()
+    assert not (run_dir / "checkpoints").exists()
 
-    # ---- embedding artifacts ----
-    assert (epoch_dir / "embeddings" / "train").exists()
-    assert (epoch_dir / "embeddings" / "val").exists()
+    with (round1_dir / "round1_summary.yaml").open("r", encoding="utf-8") as file:
+        summary = yaml.safe_load(file)
 
-    # ---- evaluator outputs ----
-    assert (epoch_dir / "evaluation" / "linear_probe").exists()
-    assert (epoch_dir / "evaluation" / "knn").exists()
-    assert (epoch_dir / "evaluation" / "retrieval").exists()
-
-    # ---- summary ----
-    assert (epoch_dir / "round1_summary.yaml").exists()
-    assert (epoch_dir / "round1_summary.json").exists()
-
-    # ---- checkpoints ----
-    assert checkpoint_manager.get_latest_checkpoint_path().exists()
-    assert checkpoint_manager.get_best_checkpoint_path().exists()
-    assert checkpoint_manager.get_epoch_checkpoint_path(0).exists()
-
-
-# -----------------------------
-# Test 2: full_resume correctness
-# -----------------------------
-def test_round1_trainer_full_resume_continues_from_next_epoch(
-    tmp_path: Path,
-) -> None:
-    cfg = _build_cfg(tmp_path)
-    cfg.train.num_epochs = 1
-
-    run_dir = Path(cfg.run.output_root) / cfg.run.run_name
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    checkpoint_manager = CheckpointManager(run_dir / "checkpoints")
-
-    # first run (epoch 0)
-    trainer = Round1FrozenTrainer(
-        cfg=cfg,
-        run_dir=run_dir,
-        checkpoint_manager=checkpoint_manager,
-    )
-    trainer.run()
-
-    # resume run (epoch 1)
-    resume_cfg = _build_cfg(tmp_path)
-    resume_cfg.train.num_epochs = 2
-    resume_cfg.train.resume.enabled = True
-    resume_cfg.train.resume.mode = "full_resume"
-    resume_cfg.train.resume.auto_resume_latest = True
-
-    resumed_trainer = Round1FrozenTrainer(
-        cfg=resume_cfg,
-        run_dir=run_dir,
-        checkpoint_manager=checkpoint_manager,
-    )
-    resumed_trainer.run()
-
-    # ---- new epoch exists ----
-    assert checkpoint_manager.get_epoch_checkpoint_path(1).exists()
-
-    epoch1_dir = run_dir / "round1" / "epoch_0001"
-    assert epoch1_dir.exists()
-    assert (epoch1_dir / "round1_summary.yaml").exists()
+    assert summary["runtime_semantics"]["mode"] == "single_shot_inference_evaluation"
+    assert summary["runtime_semantics"]["uses_gradient_updates"] is False
+    assert summary["runtime_semantics"]["uses_epoch_loop"] is False
+    assert summary["runtime_semantics"]["supports_resume"] is False
+    assert summary["runtime_semantics"]["supports_checkpoint_continuation"] is False
+    assert summary["execution"]["enabled_evaluators"] == [
+        "knn",
+        "linear_probe",
+        "retrieval",
+    ]
+    assert summary["manifests"]["train"]["num_samples"] == 16
+    assert summary["manifests"]["val"]["num_samples"] == 12
 
 
-def test_round1_trainer_skips_linear_probe_when_root_flag_is_disabled(
+def test_round1_runner_skips_linear_probe_when_root_flag_is_disabled(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     cfg = _build_cfg(tmp_path)
     cfg.evaluation.run_linear_probe = False
 
-    trainer = Round1FrozenTrainer(
+    runner = Round1FrozenRunner(
         cfg=cfg,
         run_dir=tmp_path / "runs" / "round1_test",
-        checkpoint_manager=CheckpointManager(tmp_path / "checkpoints"),
     )
-    artifacts = _build_epoch_artifacts(tmp_path)
+    artifacts = _build_run_artifacts(tmp_path)
 
     def _unexpected_linear_probe(_: object) -> None:
         raise AssertionError("run_linear_probe should not be called when disabled.")
 
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_linear_probe",
         _unexpected_linear_probe,
     )
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_knn",
         lambda _: SimpleNamespace(val_metrics={"top1_accuracy": 0.75}),
     )
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_retrieval",
         lambda _: SimpleNamespace(val_metrics={"recall@1": 0.5}),
     )
 
-    metrics = trainer._run_evaluators(artifacts)
+    metrics = runner._run_evaluators(artifacts)
 
     assert "linear_probe.accuracy" not in metrics
     assert metrics["knn.top1_accuracy"] == 0.75
     assert metrics["retrieval.recall@1"] == 0.5
 
 
-def test_round1_trainer_skips_knn_when_root_flag_is_disabled(
+def test_round1_runner_skips_knn_when_root_flag_is_disabled(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     cfg = _build_cfg(tmp_path)
     cfg.evaluation.run_knn = False
 
-    trainer = Round1FrozenTrainer(
+    runner = Round1FrozenRunner(
         cfg=cfg,
         run_dir=tmp_path / "runs" / "round1_test",
-        checkpoint_manager=CheckpointManager(tmp_path / "checkpoints"),
     )
-    artifacts = _build_epoch_artifacts(tmp_path)
+    artifacts = _build_run_artifacts(tmp_path)
 
     def _unexpected_knn(_: object) -> None:
         raise AssertionError("run_knn should not be called when disabled.")
 
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_linear_probe",
         lambda _: SimpleNamespace(val_metrics={"accuracy": 1.0}),
     )
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_knn",
         _unexpected_knn,
     )
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_retrieval",
         lambda _: SimpleNamespace(val_metrics={"recall@1": 0.5}),
     )
 
-    metrics = trainer._run_evaluators(artifacts)
+    metrics = runner._run_evaluators(artifacts)
 
     assert metrics["linear_probe.accuracy"] == 1.0
     assert "knn.top1_accuracy" not in metrics
     assert metrics["retrieval.recall@1"] == 0.5
 
 
-def test_round1_trainer_skips_retrieval_when_root_flag_is_disabled(
+def test_round1_runner_skips_retrieval_when_root_flag_is_disabled(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     cfg = _build_cfg(tmp_path)
     cfg.evaluation.run_retrieval = False
 
-    trainer = Round1FrozenTrainer(
+    runner = Round1FrozenRunner(
         cfg=cfg,
         run_dir=tmp_path / "runs" / "round1_test",
-        checkpoint_manager=CheckpointManager(tmp_path / "checkpoints"),
     )
-    artifacts = _build_epoch_artifacts(tmp_path)
+    artifacts = _build_run_artifacts(tmp_path)
 
     def _unexpected_retrieval(_: object) -> None:
         raise AssertionError("run_retrieval should not be called when disabled.")
 
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_linear_probe",
         lambda _: SimpleNamespace(val_metrics={"accuracy": 1.0}),
     )
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_knn",
         lambda _: SimpleNamespace(val_metrics={"top1_accuracy": 0.75}),
     )
     monkeypatch.setattr(
-        round1_trainer_module,
+        round1_runner_module,
         "run_retrieval",
         _unexpected_retrieval,
     )
 
-    metrics = trainer._run_evaluators(artifacts)
+    metrics = runner._run_evaluators(artifacts)
 
     assert metrics["linear_probe.accuracy"] == 1.0
     assert metrics["knn.top1_accuracy"] == 0.75
     assert "retrieval.recall@1" not in metrics
+
+
+def test_round1_runner_fails_fast_when_no_round1_evaluator_enabled(
+    tmp_path: Path,
+) -> None:
+    cfg = _build_cfg(tmp_path)
+    cfg.evaluation.run_linear_probe = False
+    cfg.evaluation.run_knn = False
+    cfg.evaluation.run_retrieval = False
+
+    run_dir = Path(cfg.run.output_root) / cfg.run.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    runner = Round1FrozenRunner(
+        cfg=cfg,
+        run_dir=run_dir,
+    )
+
+    with pytest.raises(ValueError, match="at least one enabled evaluator"):
+        runner.run()
+
+
+def test_round1_runner_fails_fast_when_centroid_flag_is_enabled(
+    tmp_path: Path,
+) -> None:
+    cfg = _build_cfg(tmp_path)
+    cfg.evaluation.run_centroid = True
+
+    run_dir = Path(cfg.run.output_root) / cfg.run.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    runner = Round1FrozenRunner(
+        cfg=cfg,
+        run_dir=run_dir,
+    )
+
+    with pytest.raises(ValueError, match="does not orchestrate centroid"):
+        runner.run()
+
+
+def test_round1_runner_rejects_resume_semantics(
+    tmp_path: Path,
+) -> None:
+    cfg = _build_cfg(tmp_path)
+    cfg.train.resume.enabled = True
+
+    run_dir = Path(cfg.run.output_root) / cfg.run.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    runner = Round1FrozenRunner(
+        cfg=cfg,
+        run_dir=run_dir,
+    )
+
+    with pytest.raises(ValueError, match="does not support train.resume"):
+        runner.run()
+
+
+def test_round1_runner_does_not_depend_on_num_epochs_or_selection_metric(
+    tmp_path: Path,
+) -> None:
+    cfg = _build_cfg(tmp_path)
+    cfg.train.num_epochs = 0
+    cfg.train.selection_metric = "unsupported.metric"
+    cfg.evaluation.run_knn = False
+    cfg.evaluation.run_retrieval = False
+
+    run_dir = Path(cfg.run.output_root) / cfg.run.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    runner = Round1FrozenRunner(
+        cfg=cfg,
+        run_dir=run_dir,
+    )
+    metrics = runner.run()
+
+    assert metrics["linear_probe.accuracy"] >= 0.0
