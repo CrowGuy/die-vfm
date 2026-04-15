@@ -37,6 +37,9 @@ Current required behavior:
 
 - payload is written to a temporary file
 - temporary file is atomically replaced into the target path
+- each save updates `latest.pt`
+- each save writes its own `epoch_xxxx.pt`
+- `best.pt` is updated only when `is_best=True`; otherwise existing `best.pt` is preserved
 
 This protects against partially written final checkpoint files under normal interruption scenarios.
 
@@ -65,6 +68,8 @@ Current validation requires:
 - `checkpoint_version` matches supported version
 - `epoch` is an int
 - `global_step` is an int
+- `model_state_dict` is a dict
+- `optimizer_state_dict`, `lr_scheduler_state_dict`, and `grad_scaler_state_dict` are present and each is either a dict or `None`
 - `trainer_state` is a dict
 - `metadata` is a dict
 

@@ -41,6 +41,20 @@ def _build_model() -> torch.nn.Module:
   return model
 
 
+def _build_valid_payload() -> dict[str, object]:
+  return {
+      "checkpoint_version": "v1",
+      "epoch": 1,
+      "global_step": 2,
+      "model_state_dict": {},
+      "optimizer_state_dict": None,
+      "lr_scheduler_state_dict": None,
+      "grad_scaler_state_dict": None,
+      "trainer_state": {},
+      "metadata": {},
+  }
+
+
 def test_save_writes_latest_best_and_epoch_checkpoints(
     tmp_path: Path,
 ) -> None:
@@ -94,6 +108,83 @@ def test_save_without_is_best_does_not_write_best_checkpoint(
   assert not manager.get_best_checkpoint_path().exists()
 
 
+def test_save_updates_latest_and_preserves_epoch_history(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  model = _build_model()
+
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=0, global_step=1),
+      epoch=0,
+      global_step=1,
+      is_best=True,
+  )
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=1, global_step=2),
+      epoch=1,
+      global_step=2,
+      is_best=False,
+  )
+
+  latest_payload = manager.load(manager.get_latest_checkpoint_path())
+  epoch0_payload = manager.load(manager.get_epoch_checkpoint_path(0))
+  epoch1_payload = manager.load(manager.get_epoch_checkpoint_path(1))
+
+  assert latest_payload["epoch"] == 1
+  assert latest_payload["global_step"] == 2
+  assert epoch0_payload["epoch"] == 0
+  assert epoch1_payload["epoch"] == 1
+
+
+def test_save_without_is_best_keeps_existing_best_checkpoint(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  model = _build_model()
+
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=0, global_step=1),
+      epoch=0,
+      global_step=1,
+      is_best=True,
+  )
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=1, global_step=2),
+      epoch=1,
+      global_step=2,
+      is_best=False,
+  )
+
+  best_payload = manager.load(manager.get_best_checkpoint_path())
+  latest_payload = manager.load(manager.get_latest_checkpoint_path())
+
+  assert best_payload["epoch"] == 0
+  assert latest_payload["epoch"] == 1
+
+
+def test_save_does_not_leave_temporary_files(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  model = _build_model()
+
+  manager.save(
+      model=model,
+      trainer_state=DummyTrainerState(epoch=0, global_step=1),
+      epoch=0,
+      global_step=1,
+      is_best=True,
+  )
+
+  temp_files = list((tmp_path / "checkpoints").glob(".*.tmp"))
+  assert temp_files == []
+
+
 def test_has_latest_checkpoint_reflects_checkpoint_presence(
     tmp_path: Path,
 ) -> None:
@@ -120,6 +211,28 @@ def test_resolve_resume_path_returns_explicit_checkpoint_path(
   resolved = manager.resolve_resume_path(
       checkpoint_path=explicit_path,
       auto_resume_latest=False,
+  )
+
+  assert resolved == explicit_path
+
+
+def test_resolve_resume_path_prefers_explicit_over_latest(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  manager.save(
+      model=_build_model(),
+      trainer_state=DummyTrainerState(),
+      epoch=0,
+      global_step=1,
+  )
+
+  explicit_path = tmp_path / "external_checkpoint.pt"
+  explicit_path.write_bytes(b"placeholder")
+
+  resolved = manager.resolve_resume_path(
+      checkpoint_path=explicit_path,
+      auto_resume_latest=True,
   )
 
   assert resolved == explicit_path
@@ -165,6 +278,25 @@ def test_resolve_resume_path_returns_none_when_no_checkpoint_available(
   resolved = manager.resolve_resume_path(
       checkpoint_path=None,
       auto_resume_latest=True,
+  )
+
+  assert resolved is None
+
+
+def test_resolve_resume_path_returns_none_when_auto_latest_is_disabled(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  manager.save(
+      model=_build_model(),
+      trainer_state=DummyTrainerState(),
+      epoch=0,
+      global_step=1,
+  )
+
+  resolved = manager.resolve_resume_path(
+      checkpoint_path=None,
+      auto_resume_latest=False,
   )
 
   assert resolved is None
@@ -437,17 +569,9 @@ def test_load_raises_for_unsupported_checkpoint_version(
   manager = CheckpointManager(tmp_path / "checkpoints")
   broken_path = manager.get_latest_checkpoint_path()
 
-  torch.save(
-      {
-          "checkpoint_version": "v999",
-          "epoch": 1,
-          "global_step": 2,
-          "model_state_dict": {},
-          "trainer_state": {},
-          "metadata": {},
-      },
-      broken_path,
-  )
+  payload = _build_valid_payload()
+  payload["checkpoint_version"] = "v999"
+  torch.save(payload, broken_path)
 
   with pytest.raises(CheckpointValidationError):
     manager.load(broken_path)
@@ -459,17 +583,9 @@ def test_load_raises_when_trainer_state_is_not_dict(
   manager = CheckpointManager(tmp_path / "checkpoints")
   broken_path = manager.get_latest_checkpoint_path()
 
-  torch.save(
-      {
-          "checkpoint_version": "v1",
-          "epoch": 1,
-          "global_step": 2,
-          "model_state_dict": {},
-          "trainer_state": [],
-          "metadata": {},
-      },
-      broken_path,
-  )
+  payload = _build_valid_payload()
+  payload["trainer_state"] = []
+  torch.save(payload, broken_path)
 
   with pytest.raises(CheckpointValidationError):
     manager.load(broken_path)
@@ -488,3 +604,67 @@ def test_save_raises_for_unsupported_trainer_state_type(
         epoch=1,
         global_step=1,
     )
+
+
+def test_load_raises_when_epoch_is_not_int(tmp_path: Path) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  broken_path = manager.get_latest_checkpoint_path()
+
+  payload = _build_valid_payload()
+  payload["epoch"] = "1"
+  torch.save(payload, broken_path)
+
+  with pytest.raises(CheckpointValidationError):
+    manager.load(broken_path)
+
+
+def test_load_raises_when_global_step_is_not_int(tmp_path: Path) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  broken_path = manager.get_latest_checkpoint_path()
+
+  payload = _build_valid_payload()
+  payload["global_step"] = "2"
+  torch.save(payload, broken_path)
+
+  with pytest.raises(CheckpointValidationError):
+    manager.load(broken_path)
+
+
+def test_load_raises_when_model_state_dict_is_not_dict(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  broken_path = manager.get_latest_checkpoint_path()
+
+  payload = _build_valid_payload()
+  payload["model_state_dict"] = []
+  torch.save(payload, broken_path)
+
+  with pytest.raises(CheckpointValidationError):
+    manager.load(broken_path)
+
+
+def test_load_raises_when_optional_state_is_invalid_type(
+    tmp_path: Path,
+) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  broken_path = manager.get_latest_checkpoint_path()
+
+  payload = _build_valid_payload()
+  payload["optimizer_state_dict"] = []
+  torch.save(payload, broken_path)
+
+  with pytest.raises(CheckpointValidationError):
+    manager.load(broken_path)
+
+
+def test_load_raises_when_metadata_is_not_dict(tmp_path: Path) -> None:
+  manager = CheckpointManager(tmp_path / "checkpoints")
+  broken_path = manager.get_latest_checkpoint_path()
+
+  payload = _build_valid_payload()
+  payload["metadata"] = []
+  torch.save(payload, broken_path)
+
+  with pytest.raises(CheckpointValidationError):
+    manager.load(broken_path)

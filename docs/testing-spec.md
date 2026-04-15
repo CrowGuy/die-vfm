@@ -355,11 +355,15 @@ Current capability:
 Acceptance criteria:
 
 - save writes `latest.pt`, per-epoch checkpoints, and `best.pt` when selected
+- save keeps `best.pt` stable when `is_best=false`
+- save does not leave temporary `*.tmp` checkpoint files behind
 - malformed or unsupported checkpoint payloads are rejected
+- malformed payload rejection includes checkpoint field type validation (`epoch`, `global_step`, `model_state_dict`, optional state dict fields, `trainer_state`, `metadata`)
 - `warm_start` restores model weights only
 - `full_resume` restores model, trainer state, optimizer, scheduler, and grad scaler state when present
 - `full_resume` rejects missing optimizer, scheduler, or grad scaler state when those objects are explicitly requested
 - bootstrap auto-resume resolves and uses `latest.pt` correctly
+- resume path resolution prioritizes explicit `checkpoint_path` over `auto_resume_latest`
 
 Existing tests:
 

@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 
-def test_train_bootstrap_runs_dataloader_and_model_smoke_test(
+def test_bootstrap_runtime_runs_dataloader_and_model_smoke_test(
     tmp_path: Path,
 ) -> None:
-    """Tests that the training entrypoint completes PR-3 bootstrap successfully."""
-    run_name = "pytest-train-bootstrap"
+    """Tests that the runtime entrypoint completes bootstrap successfully."""
+    run_name = "pytest-bootstrap-runtime"
 
     command = [
         sys.executable,
@@ -57,7 +57,10 @@ def test_train_bootstrap_runs_dataloader_and_model_smoke_test(
     assert "Model forward completed." in log_text
     assert "Embedding shape: (4, 192)" in log_text
 
-    assert "Training bootstrap completed successfully." in log_text
+    assert "Saved latest checkpoint:" in log_text
+    assert "Saved epoch checkpoint:" in log_text
+    assert "Saved best checkpoint:" in log_text
+    assert "Bootstrap runtime completed successfully." in log_text
     assert "Dataset metadata:" in log_text
 
     dataset_metadata_path = run_dir / "dataset_metadata.yaml"
@@ -79,9 +82,9 @@ def test_train_bootstrap_runs_dataloader_and_model_smoke_test(
     assert "- 4" in model_smoke_text
     assert "- 192" in model_smoke_text
 
-def test_train_bootstrap_writes_checkpoint_set(tmp_path: Path) -> None:
+def test_bootstrap_runtime_writes_checkpoint_set(tmp_path: Path) -> None:
   """Tests that bootstrap writes latest/best/epoch checkpoints."""
-  run_name = "pytest-train-checkpoint-save"
+  run_name = "pytest-bootstrap-checkpoint-save"
   command = [
       sys.executable,
       "scripts/run.py",
@@ -113,12 +116,19 @@ def test_train_bootstrap_writes_checkpoint_set(tmp_path: Path) -> None:
   assert (checkpoint_dir / "best.pt").exists()
   assert (checkpoint_dir / "epoch_0000.pt").exists()
 
+  log_path = tmp_path / run_name / "logs" / "run.log"
+  log_text = log_path.read_text(encoding="utf-8")
+  assert "Saved latest checkpoint:" in log_text
+  assert "Saved epoch checkpoint:" in log_text
+  assert "Saved best checkpoint:" in log_text
+  assert "Bootstrap runtime completed successfully." in log_text
 
-def test_train_bootstrap_auto_resume_latest_full_resume(
+
+def test_bootstrap_runtime_auto_resume_latest_full_resume(
     tmp_path: Path,
 ) -> None:
   """Tests that bootstrap can auto-resume from latest.pt."""
-  run_name = "pytest-train-auto-resume-full"
+  run_name = "pytest-bootstrap-auto-resume-full"
 
   first_command = [
       sys.executable,
@@ -178,18 +188,21 @@ def test_train_bootstrap_auto_resume_latest_full_resume(
   assert "Resolved resume checkpoint:" in log_text
   assert "Resume mode: full_resume" in log_text
   assert "Full resume completed." in log_text
+  assert "Saved latest checkpoint:" in log_text
+  assert "Saved epoch checkpoint:" in log_text
+  assert "Bootstrap runtime completed successfully." in log_text
 
   checkpoint_dir = tmp_path / run_name / "checkpoints"
   assert (checkpoint_dir / "latest.pt").exists()
   assert (checkpoint_dir / "epoch_0000.pt").exists()
 
 
-def test_train_bootstrap_explicit_warm_start_checkpoint(
+def test_bootstrap_runtime_explicit_warm_start_checkpoint(
         tmp_path: Path,
     ) -> None:
     """Tests that bootstrap can warm start from an explicit checkpoint."""
-    source_run_name = "pytest-train-warm-start-source"
-    target_run_name = "pytest-train-warm-start-target"
+    source_run_name = "pytest-bootstrap-warm-start-source"
+    target_run_name = "pytest-bootstrap-warm-start-target"
 
     source_command = [
         sys.executable,
@@ -254,6 +267,9 @@ def test_train_bootstrap_explicit_warm_start_checkpoint(
     assert "Resolved resume checkpoint:" in log_text
     assert "Resume mode: warm_start" in log_text
     assert "Warm start completed from checkpoint." in log_text
+    assert "Saved latest checkpoint:" in log_text
+    assert "Saved epoch checkpoint:" in log_text
+    assert "Bootstrap runtime completed successfully." in log_text
 
     checkpoint_dir = tmp_path / target_run_name / "checkpoints"
     assert (checkpoint_dir / "latest.pt").exists()

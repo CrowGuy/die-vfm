@@ -16,6 +16,7 @@ The repository currently treats the following as formal, testable capabilities:
 - Single-shard M1 embedding artifact layout: `manifest.yaml` plus `part-00000.pt`
 - `round1_frozen` is a single-shot inference/evaluation flow and does not define epoch/resume continuation semantics
 - `latest.pt`, `best.pt`, and `epoch_xxxx.pt` are currently part of the `bootstrap` checkpoint flow, not the formal `round1_frozen` contract.
+- bootstrap checkpoint/resume contract currently includes strict payload validation plus explicit-path-first resume resolution
 
 The repository does not yet treat `round2_ssl`, `round3_supcon`, or training-stage full-resume guarantees as current production scope.
 

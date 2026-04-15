@@ -340,6 +340,9 @@ class CheckpointManager:
         "epoch",
         "global_step",
         "model_state_dict",
+        "optimizer_state_dict",
+        "lr_scheduler_state_dict",
+        "grad_scaler_state_dict",
         "trainer_state",
         "metadata",
     )
@@ -363,6 +366,23 @@ class CheckpointManager:
       raise CheckpointValidationError(
           "Checkpoint field 'global_step' must be int."
       )
+
+    if not isinstance(payload["model_state_dict"], dict):
+      raise CheckpointValidationError(
+          "Checkpoint field 'model_state_dict' must be a dict."
+      )
+
+    optional_state_keys = (
+        "optimizer_state_dict",
+        "lr_scheduler_state_dict",
+        "grad_scaler_state_dict",
+    )
+    for key in optional_state_keys:
+      state_value = payload[key]
+      if state_value is not None and not isinstance(state_value, dict):
+        raise CheckpointValidationError(
+            f"Checkpoint field '{key}' must be a dict or None."
+        )
 
     if not isinstance(payload["trainer_state"], dict):
       raise CheckpointValidationError(

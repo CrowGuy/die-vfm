@@ -218,6 +218,10 @@ Current status:
 
 ## Phase 5: Checkpoint / Resume Current-Scope Stabilization
 
+Status:
+
+- completed
+
 Goal:
 
 - make the M1 checkpoint contract explicit and reliable for bootstrap scope
@@ -240,6 +244,19 @@ Completion criteria:
 
 - bootstrap checkpoint behavior is documented, implemented, and tested
   consistently without reintroducing Round1 semantic drift
+
+Current status:
+
+- bootstrap checkpoint payload validation is now strict and explicit, including
+  type validation for core fields and optional state-dict fields
+- save semantics coverage now validates latest/epoch/best behavior, best-file
+  stability when `is_best=false`, and no leftover temporary files
+- resume path behavior now has explicit coverage for priority rules
+  (`checkpoint_path` over `auto_resume_latest`) and malformed payload rejection
+- bootstrap runtime logging assertions now cover save-path logs and
+  resume-related logs in subprocess acceptance tests
+- wording drift has been reduced by using runtime-oriented bootstrap completion
+  logs instead of training-oriented wording
 
 ## Phase 6: `dinov2` Decision Point
 
@@ -311,6 +328,7 @@ Completion criteria:
 - Phase 2: test drift cleanup
 - Phase 3: acceptance/test matrix hardening
 - Phase 4: Round1 runtime stabilization
+- Phase 5: checkpoint/resume stabilization
 
 ### P0
 
@@ -318,7 +336,7 @@ Completion criteria:
 
 ### P1
 
-- Phase 5: checkpoint/resume stabilization
+- none
 
 ### P2
 

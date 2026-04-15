@@ -305,7 +305,7 @@ def main(cfg: DictConfig) -> None:
                 run_dir=run_dir,
                 checkpoint_manager=checkpoint_manager,
             )
-        LOGGER.info("Training bootstrap completed successfully.")
+        LOGGER.info("Bootstrap runtime completed successfully.")
         return
 
     if mode == "round1_frozen":
