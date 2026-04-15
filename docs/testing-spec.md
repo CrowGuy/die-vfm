@@ -251,7 +251,7 @@ Acceptance criteria:
 Existing tests:
 
 - `tests/test_run_dir.py`
-- `tests/test_train_bootstrap.py`
+- `tests/test_bootstrap_runtime.py`
 
 Coverage status:
 
@@ -368,7 +368,7 @@ Acceptance criteria:
 Existing tests:
 
 - `tests/test_checkpoint_manager.py`
-- `tests/test_train_bootstrap.py`
+- `tests/test_bootstrap_runtime.py`
 
 Coverage status:
 
