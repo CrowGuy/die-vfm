@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 from omegaconf import OmegaConf
 
+from tests._artifact_test_utils import make_artifacts
 from scripts.run_centroid import (
     _extract_centroid_config,
     _format_metrics,
@@ -15,6 +19,20 @@ from scripts.run_centroid import (
     _to_plain_object,
     main,
 )
+
+
+def _run_script(repo_root: Path, overrides: list[str]) -> subprocess.CompletedProcess[str]:
+    """Runs the centroid script with Hydra overrides."""
+    script_path = repo_root / "scripts" / "run_centroid.py"
+
+    command = [sys.executable, str(script_path), *overrides]
+    return subprocess.run(
+        command,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -327,3 +345,55 @@ def test_main_propagates_missing_centroid_section(monkeypatch) -> None:
         match="Missing required Hydra config section: evaluation.centroid",
     ):
         main.__wrapped__(config)
+
+
+def test_run_centroid_script_end_to_end(tmp_path: Path) -> None:
+    """Runs the centroid script end to end from saved embedding artifacts."""
+    repo_root = Path(__file__).resolve().parents[1]
+    train_dir, val_dir = make_artifacts(tmp_path / "embeddings")
+    output_dir = tmp_path / "outputs"
+
+    completed = _run_script(
+        repo_root=repo_root,
+        overrides=[
+            "evaluation.centroid.enabled=true",
+            f"evaluation.centroid.input.train_split_dir={train_dir}",
+            f"evaluation.centroid.input.val_split_dir={val_dir}",
+            f"evaluation.centroid.output.output_dir={output_dir}",
+            "evaluation.centroid.input.normalize_embeddings=false",
+            "evaluation.centroid.evaluator.metric=cosine",
+            "evaluation.centroid.evaluator.batch_size=8",
+            "evaluation.centroid.evaluator.device=cpu",
+            "evaluation.centroid.evaluator.topk=[1]",
+            "evaluation.centroid.output.save_predictions=true",
+        ],
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Centroid evaluation completed." in completed.stdout
+    assert f"Output directory: {output_dir}" in completed.stdout
+
+    metrics_path = output_dir / "metrics.yaml"
+    summary_path = output_dir / "summary.yaml"
+    config_path = output_dir / "config.yaml"
+    predictions_path = output_dir / "predictions.pt"
+
+    assert metrics_path.exists()
+    assert summary_path.exists()
+    assert config_path.exists()
+    assert predictions_path.exists()
+
+    with metrics_path.open("r", encoding="utf-8") as file:
+        metrics_payload = yaml.safe_load(file)
+    with summary_path.open("r", encoding="utf-8") as file:
+        summary_payload = yaml.safe_load(file)
+    with config_path.open("r", encoding="utf-8") as file:
+        config_payload = yaml.safe_load(file)
+
+    assert metrics_payload["evaluator_type"] == "centroid"
+    assert metrics_payload["input"]["train_split"] == "train"
+    assert metrics_payload["input"]["val_split"] == "val"
+    assert summary_payload["evaluator"] == "centroid"
+    assert summary_payload["output_dir"] == str(output_dir)
+    assert config_payload["input"]["train_split_dir"] == str(train_dir)
+    assert config_payload["input"]["val_split_dir"] == str(val_dir)

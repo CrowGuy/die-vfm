@@ -131,6 +131,10 @@ Current status:
 
 ## Phase 3: Acceptance Criteria and Test Matrix Hardening
 
+Status:
+
+- completed
+
 Goal:
 
 - turn current spec into a directly verifiable engineering contract
@@ -150,6 +154,21 @@ Completion criteria:
 
 - current spec has a direct verification path
 - each current major capability has an explicit acceptance target
+
+Current status:
+
+- `docs/testing-spec.md` now includes a complete acceptance and coverage
+  matrix for all current M1 / Round1 capabilities
+- current capabilities, acceptance criteria, test mappings, and coverage states
+  are explicitly documented in one place
+- config and builder coverage has been hardened via direct builder tests and
+  root config assertions
+- embedding artifact coverage has been hardened with script-level checks for
+  `export_splits`, `include_test_split`, and placeholder no-op fields
+- standalone evaluator coverage has been hardened with subprocess CLI
+  end-to-end tests for `knn`, `centroid`, and `retrieval`
+- current known Phase 3 P1 gaps:
+  - none currently tracked for existing M1/Round1 capabilities
 
 ## Phase 4: Round1 Runtime Stabilization
 
@@ -252,15 +271,19 @@ Completion criteria:
 
 ## Priority Summary
 
-### P0
+### Completed
 
 - Phase 0: governance alignment
 - Phase 1: config/schema drift cleanup
 - Phase 2: test drift cleanup
+- Phase 3: acceptance/test matrix hardening
+
+### P0
+
+- none
 
 ### P1
 
-- Phase 3: acceptance/test matrix hardening
 - Phase 4: Round1 runtime stabilization
 - Phase 5: checkpoint/resume stabilization
 

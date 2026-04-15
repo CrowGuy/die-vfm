@@ -50,6 +50,8 @@ def test_base_config_loads() -> None:
 
     assert cfg.evaluation.run_linear_probe is False
     assert cfg.evaluation.run_knn is False
+    assert cfg.evaluation.run_centroid is False
+    assert cfg.evaluation.run_retrieval is False
 
 
 def test_debug_model_smoke_preset_overrides_expected_root_fields() -> None:

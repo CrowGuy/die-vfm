@@ -2,12 +2,30 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from omegaconf import OmegaConf
 
+from tests._artifact_test_utils import make_artifacts
 from scripts import run_retrieval
+
+
+def _run_script(repo_root: Path, overrides: list[str]) -> subprocess.CompletedProcess[str]:
+    """Runs the retrieval script with Hydra overrides."""
+    script_path = repo_root / "scripts" / "run_retrieval.py"
+
+    command = [sys.executable, str(script_path), *overrides]
+    return subprocess.run(
+        command,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def test_extract_retrieval_config_returns_expected_subtree() -> None:
@@ -384,3 +402,59 @@ def test_main_raises_for_invalid_config() -> None:
 
     with pytest.raises(ValueError, match="val_split_dir"):
         run_retrieval.main.__wrapped__(config)
+
+
+def test_run_retrieval_script_end_to_end(tmp_path: Path) -> None:
+    """Runs the retrieval script end to end from saved embedding artifacts."""
+    repo_root = Path(__file__).resolve().parents[1]
+    train_dir, val_dir = make_artifacts(tmp_path / "embeddings")
+    output_dir = tmp_path / "outputs"
+
+    completed = _run_script(
+        repo_root=repo_root,
+        overrides=[
+            "evaluation.retrieval.enabled=true",
+            f"evaluation.retrieval.input.train_split_dir={train_dir}",
+            f"evaluation.retrieval.input.val_split_dir={val_dir}",
+            f"evaluation.retrieval.output.output_dir={output_dir}",
+            "evaluation.retrieval.input.normalize_embeddings=false",
+            "evaluation.retrieval.evaluator.metric=cosine",
+            "evaluation.retrieval.evaluator.batch_size=8",
+            "evaluation.retrieval.evaluator.device=cpu",
+            "evaluation.retrieval.evaluator.topk=[1]",
+            "evaluation.retrieval.evaluator.save_predictions_topk=1",
+            "evaluation.retrieval.evaluator.exclude_same_image_id=false",
+            "evaluation.retrieval.output.save_predictions=true",
+        ],
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Retrieval evaluation completed." in completed.stdout
+    assert f"Output directory: {output_dir}" in completed.stdout
+
+    metrics_path = output_dir / "metrics.yaml"
+    summary_path = output_dir / "summary.yaml"
+    config_path = output_dir / "config.yaml"
+    predictions_path = output_dir / "predictions.pt"
+
+    assert metrics_path.exists()
+    assert summary_path.exists()
+    assert config_path.exists()
+    assert predictions_path.exists()
+
+    with metrics_path.open("r", encoding="utf-8") as file:
+        metrics_payload = yaml.safe_load(file)
+    with summary_path.open("r", encoding="utf-8") as file:
+        summary_payload = yaml.safe_load(file)
+    with config_path.open("r", encoding="utf-8") as file:
+        config_payload = yaml.safe_load(file)
+
+    assert metrics_payload["evaluator_type"] == "retrieval"
+    assert metrics_payload["input"]["gallery_split"] == "train"
+    assert metrics_payload["input"]["query_split"] == "val"
+    assert summary_payload["evaluator"] == "retrieval"
+    assert summary_payload["gallery_split"] == "train"
+    assert summary_payload["query_split"] == "val"
+    assert summary_payload["output_dir"] == str(output_dir)
+    assert config_payload["input"]["train_split_dir"] == str(train_dir)
+    assert config_payload["input"]["val_split_dir"] == str(val_dir)

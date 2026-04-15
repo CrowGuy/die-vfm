@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from omegaconf import OmegaConf
 
 from types import SimpleNamespace
 
+from tests._artifact_test_utils import make_artifacts
 from die_vfm.evaluator.knn_runner import KnnRunResult
 from scripts.run_knn import (
     _get_knn_config,
@@ -18,6 +22,20 @@ from scripts.run_knn import (
     _validate_knn_config,
     main,
 )
+
+
+def _run_script(repo_root: Path, overrides: list[str]) -> subprocess.CompletedProcess[str]:
+    """Runs the kNN script with Hydra overrides."""
+    script_path = repo_root / "scripts" / "run_knn.py"
+
+    command = [sys.executable, str(script_path), *overrides]
+    return subprocess.run(
+        command,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def _make_root_config() -> object:
@@ -281,3 +299,58 @@ def test_main_raises_for_missing_required_config() -> None:
         match="Missing required config: evaluation.knn.input.train_split_dir.",
     ):
         main.__wrapped__(cfg)
+
+
+def test_run_knn_script_end_to_end(tmp_path: Path) -> None:
+    """Runs the kNN script end to end from saved embedding artifacts."""
+    repo_root = Path(__file__).resolve().parents[1]
+    train_dir, val_dir = make_artifacts(tmp_path / "embeddings")
+    output_dir = tmp_path / "outputs"
+
+    completed = _run_script(
+        repo_root=repo_root,
+        overrides=[
+            "evaluation.knn.enabled=true",
+            f"evaluation.knn.input.train_split_dir={train_dir}",
+            f"evaluation.knn.input.val_split_dir={val_dir}",
+            f"evaluation.knn.output.output_dir={output_dir}",
+            "evaluation.knn.input.normalize_embeddings=false",
+            "evaluation.knn.evaluator.k=3",
+            "evaluation.knn.evaluator.metric=cosine",
+            "evaluation.knn.evaluator.weighting=uniform",
+            "evaluation.knn.evaluator.temperature=0.07",
+            "evaluation.knn.evaluator.batch_size=8",
+            "evaluation.knn.evaluator.device=cpu",
+            "evaluation.knn.evaluator.topk=[1]",
+            "evaluation.knn.output.save_predictions=true",
+        ],
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "kNN evaluation completed." in completed.stdout
+    assert f"Output directory: {output_dir}" in completed.stdout
+
+    metrics_path = output_dir / "metrics.yaml"
+    summary_path = output_dir / "summary.yaml"
+    config_path = output_dir / "config.yaml"
+    predictions_path = output_dir / "predictions.pt"
+
+    assert metrics_path.exists()
+    assert summary_path.exists()
+    assert config_path.exists()
+    assert predictions_path.exists()
+
+    with metrics_path.open("r", encoding="utf-8") as file:
+        metrics_payload = yaml.safe_load(file)
+    with summary_path.open("r", encoding="utf-8") as file:
+        summary_payload = yaml.safe_load(file)
+    with config_path.open("r", encoding="utf-8") as file:
+        config_payload = yaml.safe_load(file)
+
+    assert metrics_payload["evaluator_type"] == "knn"
+    assert metrics_payload["input"]["train_split"] == "train"
+    assert metrics_payload["input"]["val_split"] == "val"
+    assert summary_payload["evaluator"] == "knn"
+    assert summary_payload["output_dir"] == str(output_dir)
+    assert config_payload["input"]["train_split_dir"] == str(train_dir)
+    assert config_payload["input"]["val_split_dir"] == str(val_dir)
