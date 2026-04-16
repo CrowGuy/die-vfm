@@ -30,6 +30,9 @@ The current repository treats the following as formal, testable capabilities:
   - `knn`
   - `retrieval`
 - M1 checkpoint/resume utilities (bootstrap scope)
+- minimum trustworthy current-scope e2e baseline:
+  - `bootstrap` checkpoint/write smoke
+  - `round1_frozen` embedding export plus evaluator orchestration smoke
 
 ## Test Layers
 
@@ -369,6 +372,28 @@ Existing tests:
 
 - `tests/test_checkpoint_manager.py`
 - `tests/test_bootstrap_runtime.py`
+
+Coverage status:
+
+- covered
+
+### 9. Minimum Trustworthy End-to-End Baseline
+
+Current capability:
+
+- one dummy-backed, CPU-friendly two-stage baseline path can be executed repeatedly as a current-scope trust anchor
+
+Acceptance criteria:
+
+- Stage A (`bootstrap`) succeeds and writes run/config/smoke/checkpoint artifacts
+- Stage B (`round1_frozen`) succeeds and writes train/val embedding artifacts, evaluator outputs, and run summary artifacts
+- baseline evaluator scope is intentionally minimized for speed and stability (`knn` enabled; `linear_probe` and `retrieval` disabled)
+- baseline assertions localize failures by stage (`bootstrap` versus `round1_frozen`) and by artifact class (checkpoint, export, evaluator, summary)
+- baseline remains current-scope only (dummy-backed, CPU-friendly, no Round2+ semantics)
+
+Existing tests:
+
+- `tests/test_minimum_e2e_path.py`
 
 Coverage status:
 

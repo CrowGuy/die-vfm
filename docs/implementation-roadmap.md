@@ -298,23 +298,70 @@ Current status:
 
 ## Phase 7: Minimum Trustworthy End-to-End Path
 
+Status:
+
+- completed
+
 Goal:
 
 - maintain at least one complete current-scope path that the team can trust
 
 Tasks:
 
-1. Ensure there is at least one e2e route covering:
+1. Freeze the baseline definition for this phase:
+   - dummy-backed
+   - CPU-friendly
+   - current-scope only (`bootstrap` plus `round1_frozen`)
+   - explicitly out of scope: `dinov2` promotion, Round2+, distributed modes
+2. Define one fixed baseline config profile for repeatable execution:
+   - `model/backbone=dummy`
+   - stable pooler selection (`mean` or `attn_pooler_v1`)
+   - `dataset=dummy`
+   - `system.device=cpu`
+   - `system.num_workers=0`
+3. Define a two-stage minimum e2e route that together covers:
    - config compose
    - model build
-   - embedding export
-   - evaluator run
-   - checkpoint write
-2. Prefer a fast dummy-backed path for repeatable validation
+   - checkpoint write (`bootstrap`)
+   - embedding export (`round1_frozen`)
+   - evaluator run (`round1_frozen`)
+4. Lock a minimum evaluator set for the e2e path to keep runtime fast and stable:
+   - prefer one fast evaluator (`knn` or `linear_probe`)
+   - avoid turning this phase into full evaluator matrix duplication
+5. Add a dedicated acceptance test for the minimum trustworthy e2e route:
+   - target file: `tests/test_minimum_e2e_path.py`
+   - assert key artifacts and summaries from both route stages
+6. Keep failure diagnostics explicit in assertions so breakage is easy to localize:
+   - compose/build failures
+   - checkpoint failures
+   - export/evaluator failures
+   - summary/output contract failures
+7. Update testing documentation to map the new e2e baseline:
+   - add or refine acceptance wording in `docs/testing-spec.md`
+   - map the Phase 7 e2e capability to the dedicated test file
+8. Write back Phase 7 progress once baseline lands:
+   - update `Current status` under this phase
+   - keep `Priority Summary` aligned with actual progress
 
 Completion criteria:
 
 - the repository has one complete, repeatable, trustworthy current-scope e2e path
+
+Current status:
+
+- baseline definition is now fixed as dummy-backed, CPU-friendly, current-scope
+  only (`bootstrap` plus `round1_frozen`)
+- implementation checklist has been expanded into executable Phase 7 tasks with
+  explicit scope boundaries and artifact assertions
+- an initial dedicated baseline acceptance test has been added as
+  `tests/test_minimum_e2e_path.py`, validating the two-stage path:
+  - `bootstrap` for checkpoint/write smoke
+  - `round1_frozen` for embedding export plus evaluator orchestration
+- testing docs now explicitly map this baseline capability in
+  `docs/testing-spec.md`, including acceptance criteria and concrete test
+  mapping
+- completion-level diagnostics expectations are now represented through staged
+  baseline assertions (checkpoint/export/evaluator/summary contract checks)
 
 ## Phase 8: Future-Spec Preparation
 
@@ -347,6 +394,7 @@ Completion criteria:
 - Phase 4: Round1 runtime stabilization
 - Phase 5: checkpoint/resume stabilization
 - Phase 6: `dinov2` decision
+- Phase 7: minimum trustworthy e2e path
 
 ### P0
 
@@ -354,7 +402,7 @@ Completion criteria:
 
 ### P1
 
-- Phase 7: minimum trustworthy e2e path
+- none
 
 ### P2
 
