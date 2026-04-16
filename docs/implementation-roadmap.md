@@ -260,6 +260,10 @@ Current status:
 
 ## Phase 6: `dinov2` Decision Point
 
+Status:
+
+- completed
+
 Goal:
 
 - remove the ambiguous middle state around `dinov2`
@@ -278,6 +282,19 @@ Tasks:
 Completion criteria:
 
 - `dinov2` is no longer ambiguously described
+
+Current status:
+
+- `dinov2` has been explicitly kept as future-facing rather than promoted into
+  current formal support
+- current docs already align on this boundary:
+  - `docs/current-spec.md` lists `dinov2` as present in codebase but not current
+    formal support
+  - `docs/future-spec.md` keeps `dinov2` under future backbone roadmap
+  - `README.md` states `dinov2` is not yet fully wired as a current formal
+    capability
+- promotion work (builder wiring + runtime validation + tests) is intentionally
+  deferred until there is an explicit future promotion track
 
 ## Phase 7: Minimum Trustworthy End-to-End Path
 
@@ -329,6 +346,7 @@ Completion criteria:
 - Phase 3: acceptance/test matrix hardening
 - Phase 4: Round1 runtime stabilization
 - Phase 5: checkpoint/resume stabilization
+- Phase 6: `dinov2` decision
 
 ### P0
 
@@ -336,12 +354,10 @@ Completion criteria:
 
 ### P1
 
-- none
+- Phase 7: minimum trustworthy e2e path
 
 ### P2
 
-- Phase 6: `dinov2` decision
-- Phase 7: minimum trustworthy e2e path
 - Phase 8: future-spec preparation
 
 ## Execution Rule
