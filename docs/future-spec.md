@@ -84,6 +84,40 @@ Target future formal backbones include:
 
 Longer-term backbone expansion may include additional token-centric models, but only after builder wiring, config support, documentation, and tests are aligned.
 
+### `dinov2` Promotion Scope
+
+The next planned backbone-promotion track is intentionally narrow:
+
+- promote only `dinov2`
+- promote only for current runtime modes:
+  - `bootstrap`
+  - `round1_frozen`
+- do not use this promotion to introduce Round2+ training semantics
+- do not use this promotion to open a multi-backbone support matrix
+
+Target outcome of this promotion:
+
+- `dinov2` can be selected through current config composition
+- `bootstrap` can build the model and complete forward/runtime smoke with
+  `dinov2`
+- `round1_frozen` can run frozen embedding export and artifact-driven
+  evaluation with `dinov2`
+
+Required promotion layers:
+
+- backbone builder support
+- runtime-usable config contract
+- runtime validation for current supported paths
+- dedicated tests
+- current-spec and README wording updates
+
+Out of scope for this promotion:
+
+- `round2_ssl` or `round3_supcon`
+- optimizer/scheduler/resume semantics for `dinov2`
+- multi-backbone benchmark matrix support
+- additional backbone promotions in the same track
+
 ## Pooler Roadmap
 
 The current mainline future direction remains attention pooling.

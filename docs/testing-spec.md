@@ -17,6 +17,8 @@ The current repository treats the following as formal, testable capabilities:
 
 - config composition and builder resolution
 - dataset sample and batch contract
+- domain dataset adapter ingestion contract (`dataset=domain`) for CSV-manifest
+  validation, split filtering, and label canonicalization
 - model output and pooler contract
 - `bootstrap` smoke runtime path
 - embedding artifact export and load
@@ -204,11 +206,14 @@ Acceptance criteria:
 - samples expose `image`, `label`, `image_id`, and `meta`
 - collated batches preserve shape and row alignment for images, labels, ids, and metadata
 - supported dataset adapters reject unsupported configuration where required
+- domain adapter enforces manifest fail-fast boundaries for malformed rows and
+  required field violations
 
 Existing tests:
 
 - `tests/test_dummy_dataset.py`
 - `tests/test_cifar10_dataset.py`
+- `tests/test_domain_dataset.py`
 
 Coverage status:
 
@@ -250,6 +255,7 @@ Acceptance criteria:
 - bootstrap writes smoke metadata artifacts
 - bootstrap writes the current checkpoint set
 - bootstrap resume entry behavior works for current `warm_start` and `full_resume` scope
+- bootstrap supports a script-level smoke path with `dataset=domain`
 
 Existing tests:
 
@@ -334,16 +340,22 @@ Current capability:
 
 Acceptance criteria:
 
-- the runtime writes train and val embeddings for one run execution
+- the runtime writes embeddings for the available `train` and/or `val` splits
+- the currently covered baseline path still includes dual-split (`train` plus
+  `val`) export in one run execution
+- domain single-split (`train`-only or `val`-only) export-only execution is
+  supported for current domain-ingestion workflows
 - the current Round1 evaluator set (`linear_probe`, `knn`, `retrieval`) is executed when enabled
 - root `evaluation.run_*` flags disable the corresponding Round1 evaluator path
 - run summary is written with evaluator execution metadata
 - Round1 contract does not rely on `train.num_epochs` or `train.resume.*`
 - Round1 contract does not rely on training-style checkpoint continuation semantics
+- mixed-label splits are rejected by the current artifact export contract
 
 Existing tests:
 
 - `tests/test_round1_runner.py`
+- `tests/test_minimum_e2e_path.py`
 
 Coverage status:
 
@@ -393,6 +405,48 @@ Acceptance criteria:
 
 Existing tests:
 
+- `tests/test_minimum_e2e_path.py`
+
+Coverage status:
+
+- covered
+
+### 10. Domain Dataset Adapter Ingestion
+
+Current capability:
+
+- `dataset=domain` supports CSV-manifest ingestion in current scope with
+  fail-fast validation, split mapping, canonical label mapping, and script-level
+  runtime coverage
+
+Acceptance criteria:
+
+- Hydra composes `dataset=domain` config surface under current root config
+- domain adapter validates whole-manifest rules at initialization time
+- train split rejects mixed labeled/unlabeled rows and empty-split cases
+- val split rejects mixed labeled/unlabeled rows under current artifact contract
+- `dataset.require_non_empty_val=true` enforces fail-fast for empty `val` split
+  in inference-only workflows; default `false` keeps empty-`val` behavior
+  opt-in
+- `dataset.require_non_empty_val=true` fail-fast is covered at script level
+  (`scripts/run.py` with `experiment=domain_inference_export`) and must return
+  non-zero with the empty-`val` policy wording
+- `label_map` config validation fail-fast branches are covered:
+  non-mapping input, empty key, non-int/bool value, and conflicting canonical
+  keys
+- manifest edge-case failures (`Source`, `PATH`, missing files, duplicate `DID`,
+  merge shape mismatch, unknown labels) are covered by dedicated tests
+- `scripts/run.py` smoke paths cover `dataset=domain` for both
+  `bootstrap` and `round1_frozen`
+- `scripts/run.py` smoke includes `experiment=domain_inference_export` with
+  `dataset=domain`
+
+Existing tests:
+
+- `tests/test_config.py`
+- `tests/test_domain_dataset.py`
+- `tests/test_bootstrap_runtime.py`
+- `tests/test_round1_runner.py`
 - `tests/test_minimum_e2e_path.py`
 
 Coverage status:

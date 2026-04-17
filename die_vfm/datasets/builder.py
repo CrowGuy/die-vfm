@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 
 from die_vfm.datasets.base import DatasetAdapter, DatasetSample
 from die_vfm.datasets.cifar10_dataset import Cifar10DatasetAdapter
+from die_vfm.datasets.domain_dataset import DomainDatasetAdapter
 from die_vfm.datasets.dummy_dataset import DummyDatasetAdapter
 
 
@@ -30,6 +31,9 @@ def build_dataset(cfg: Any, split: str) -> DatasetAdapter:
 
     if dataset_name == "cifar10":
         return Cifar10DatasetAdapter.from_config(cfg.dataset, split=split)
+
+    if dataset_name == "domain":
+        return DomainDatasetAdapter.from_config(cfg.dataset, split=split)
 
     raise ValueError(f"Unsupported dataset name: {dataset_name}")
 

@@ -295,6 +295,38 @@ Current status:
     capability
 - promotion work (builder wiring + runtime validation + tests) is intentionally
   deferred until there is an explicit future promotion track
+- the future promotion track is now scoped narrowly to one backbone and one
+  current-runtime surface:
+  - promote only `dinov2`
+  - promote only for `bootstrap` and `round1_frozen`
+  - do not expand into Round2+ training semantics
+  - do not expand into a multi-backbone promotion matrix
+  - treat frozen embedding export plus artifact-driven evaluation as the target
+    runtime outcome
+
+Promotion checklist:
+
+1. Builder integration
+   - add `dinov2` support to backbone builder
+   - keep unsupported variants/configs fail-fast and explicit
+2. Config contract
+   - ensure `configs/model/backbone/dinov2.yaml` is runtime-usable rather than
+     codebase-only
+   - align config fields with actual `DINOv2Backbone` runtime expectations
+3. Runtime validation
+   - validate `bootstrap` path can build and forward `dinov2`
+   - validate `round1_frozen` can export frozen embeddings with `dinov2`
+   - keep Round1 semantics frozen/inference-only; no gradient-update semantics
+4. Test coverage
+   - add builder/config coverage for `dinov2`
+   - add model/backbone smoke coverage for `dinov2`
+   - add at least one script-level runtime smoke for current supported path
+     (`bootstrap` and/or `round1_frozen`)
+   - keep current dummy-backed trustworthy baseline intact
+5. Docs promotion
+   - update `docs/current-spec.md` once runtime/config/tests are landed
+   - update `README.md` current-support wording
+   - keep `docs/future-spec.md` focused on what remains outside this promotion
 
 ## Phase 7: Minimum Trustworthy End-to-End Path
 
@@ -365,23 +397,73 @@ Current status:
 
 ## Phase 8: Future-Spec Preparation
 
+Status:
+
+- completed
+
 Goal:
 
-- prepare for future work without prematurely claiming it
+- prepare future work without destabilizing current scope, while landing
+  domain-adapter v0 through full contract alignment
 
 Tasks:
 
 1. Refine future-spec details only after current scope is stable
-2. Keep `round2_ssl`, `round3_supcon`, and richer resume work in future docs until code and tests land
+2. Keep `round2_ssl`, `round3_supcon`, and richer resume work in future docs
+   until code and tests land
 3. Promote features only through the full path:
    - runtime
    - config
    - tests
    - docs
+4. Deliver domain-adapter v0 against the agreed ingestion contract:
+   - formal spec in docs
+   - config surface and schema mirror
+   - runtime implementation and builder wiring
+   - script-level smoke coverage for `bootstrap` and `round1_frozen`
+5. Close out domain-adapter docs alignment after implementation:
+   - map domain adapter capability explicitly in `docs/testing-spec.md`
+   - ensure `README.md` wording reflects current support status
+   - keep augmentation/sampling policy in future promotion tracks
 
 Completion criteria:
 
 - future work has a stable launch point and does not destabilize current scope
+- domain-adapter v0 is documented, implemented, and represented in test/docs
+  mapping without scope ambiguity
+
+Current status:
+
+- domain-data ingestion contract is documented in
+  `docs/domain-adapter-spec.md` and aligned with current/testing spec wording
+- domain-adapter config/runtime foundations are implemented:
+  - `pandas` dependency is in `pyproject.toml`
+  - `configs/dataset/domain.yaml` is available
+  - `DomainDatasetConfig` is mirrored in `die_vfm/config/schema.py`
+  - `DomainVisionDataset` and `DomainDatasetAdapter` are implemented and wired
+    through `die_vfm/datasets/builder.py`
+- test coverage now includes domain-adapter runtime paths:
+  - Hydra compose coverage for `dataset=domain` (`tests/test_config.py`)
+  - manifest validation and edge-case fail-fast coverage
+    (`tests/test_domain_dataset.py`)
+  - bootstrap CLI smoke coverage for `dataset=domain`
+    (`tests/test_bootstrap_runtime.py`)
+  - round1 single-split domain runner coverage
+    (`tests/test_round1_runner.py`)
+  - round1 CLI smoke coverage for `dataset=domain`
+    (`tests/test_minimum_e2e_path.py`)
+- closeout alignment has been completed:
+  - testing-spec matrix explicitly maps domain-adapter capability
+  - README wording is aligned to implementation-plus-spec status
+  - current-spec now explicitly lists domain adapter v0 ingestion in scope
+  - inference-only `val` non-empty policy is implemented via
+    `dataset.require_non_empty_val` with dedicated test coverage
+  - mixed-label `val` is now explicitly rejected under the current artifact
+    contract, with runtime and smoke-level coverage
+  - `require_non_empty_val` now has explicit script-level fail coverage for
+    empty-`val` inference-only runs
+  - `label_map` config validation branches are covered (non-mapping, empty key,
+    non-int/bool value, canonical-key conflict)
 
 ## Priority Summary
 
@@ -395,6 +477,7 @@ Completion criteria:
 - Phase 5: checkpoint/resume stabilization
 - Phase 6: `dinov2` decision
 - Phase 7: minimum trustworthy e2e path
+- Phase 8: future-spec preparation
 
 ### P0
 
@@ -406,7 +489,7 @@ Completion criteria:
 
 ### P2
 
-- Phase 8: future-spec preparation
+- none
 
 ## Execution Rule
 

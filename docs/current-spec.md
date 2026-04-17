@@ -11,6 +11,7 @@ If this document conflicts with `docs/future-spec.md`, implementation and testin
 Current scope is intentionally narrow:
 
 - Stable token-centric model contract
+- Domain dataset adapter ingestion (`dataset=domain`) for CSV-manifest workflows
 - Embedding artifact export
 - Artifact-driven evaluation
 - `bootstrap` runtime flow
@@ -64,7 +65,7 @@ Behavior:
 
 - Builds model
 - Applies freeze policy
-- Exports train and val embeddings
+- Exports embeddings for available `train` and/or `val` splits
 - Runs enabled Round1 evaluators
 - Writes run summary
 
@@ -78,6 +79,8 @@ Runtime semantics:
 - `freeze_backbone` / `freeze_pooler` are current freeze-policy controls, but this mode does not update model weights even when those flags are disabled
 - `round1_frozen` does not define resume semantics
 - `round1_frozen` does not define training-style checkpoint semantics
+- `round1_frozen` may be used to export embeddings from only training data, only
+  inference/validation data, or both, depending on which splits are available
 
 Current `round1_frozen` orchestration scope:
 
@@ -121,6 +124,13 @@ Required rules:
 - `image_id` must be non-empty and unique within a shard
 - `meta` must remain aligned with batch rows
 - labels may be absent for unlabeled flows
+- mixed labeled and unlabeled samples must not coexist within one exported split
+  under the current artifact contract
+- domain adapter (`dataset=domain`) enforces whole-manifest validation at
+  initialization time and fail-fast boundaries for malformed manifest inputs
+- domain adapter supports an explicit inference-only `val` non-empty policy via
+  `dataset.require_non_empty_val`; when enabled, empty filtered `val` split is
+  rejected
 
 ## Model Contract
 

@@ -64,3 +64,38 @@ def test_debug_model_smoke_preset_overrides_expected_root_fields() -> None:
     assert cfg.system.num_workers == 0
     assert cfg.dataloader.batch_size == 4
     assert cfg.model.return_debug_outputs is True
+
+
+def test_domain_dataset_preset_composes_expected_config_surface() -> None:
+    """Tests that the domain dataset preset composes the expected config surface."""
+    cfg = _compose_config(overrides=["dataset=domain"])
+
+    assert cfg.dataset.name == "domain"
+    assert cfg.dataset.manifest_path == "./data/domain/manifest.csv"
+    assert list(cfg.dataset.image_size) == [224, 224]
+    assert cfg.dataset.merge_images is False
+    assert cfg.dataset.single_image_source == "img1"
+    assert cfg.dataset.require_non_empty_val is False
+
+    assert cfg.dataset.did_field == "DID"
+    assert cfg.dataset.img1_field == "IMG_1"
+    assert cfg.dataset.img2_field == "IMG_2"
+    assert cfg.dataset.source_field == "Source"
+    assert cfg.dataset.label_field == "Label"
+    assert cfg.dataset.path_field == "PATH"
+
+    assert list(cfg.dataset.normalize.mean) == [0.485, 0.456, 0.406]
+    assert list(cfg.dataset.normalize.std) == [0.229, 0.224, 0.225]
+    assert dict(cfg.dataset.label_map) == {}
+
+
+def test_domain_inference_export_preset_composes_expected_fields() -> None:
+    """Tests the domain inference-only preset contract."""
+    cfg = _compose_config(overrides=["experiment=domain_inference_export"])
+
+    assert cfg.experiment.name == "domain_inference_export"
+    assert cfg.train.mode == "round1_frozen"
+    assert cfg.evaluation.run_linear_probe is False
+    assert cfg.evaluation.run_knn is False
+    assert cfg.evaluation.run_centroid is False
+    assert cfg.evaluation.run_retrieval is False

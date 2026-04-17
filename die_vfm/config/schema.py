@@ -28,6 +28,7 @@ from typing import Literal
 
 ResumeMode = Literal["full_resume", "warm_start"]
 TrainMode = Literal["bootstrap", "round1_frozen"]
+SingleImageSource = Literal["img1", "img2"]
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,33 @@ class Cifar10DatasetConfig:
             std=[0.229, 0.224, 0.225],
         )
     )
+
+
+@dataclass(frozen=True)
+class DomainDatasetConfig:
+    """Domain dataset config mirrored from the current ingestion contract."""
+
+    name: Literal["domain"] = "domain"
+    manifest_path: str = (
+        "${oc.env:DIE_VFM_DOMAIN_MANIFEST,./data/domain/manifest.csv}"
+    )
+    image_size: list[int] = field(default_factory=lambda: [224, 224])
+    merge_images: bool = False
+    single_image_source: SingleImageSource = "img1"
+    require_non_empty_val: bool = False
+    did_field: str = "DID"
+    img1_field: str = "IMG_1"
+    img2_field: str = "IMG_2"
+    source_field: str = "Source"
+    label_field: str = "Label"
+    path_field: str = "PATH"
+    normalize: NormalizeConfig = field(
+        default_factory=lambda: NormalizeConfig(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        )
+    )
+    label_map: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -458,7 +486,7 @@ class CurrentRootConfig:
     system: SystemConfig = field(default_factory=SystemConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     dataloader: DataloaderConfig = field(default_factory=DataloaderConfig)
-    dataset: DummyDatasetConfig | Cifar10DatasetConfig = field(
+    dataset: DummyDatasetConfig | Cifar10DatasetConfig | DomainDatasetConfig = field(
         default_factory=DummyDatasetConfig
     )
     model: ModelConfig = field(default_factory=ModelConfig)

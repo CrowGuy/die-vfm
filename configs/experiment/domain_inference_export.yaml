@@ -1,0 +1,22 @@
+# @package _global_
+
+defaults:
+  - override /hydra/job_logging: disabled
+  - override /hydra/hydra_logging: disabled
+
+experiment:
+  name: domain_inference_export
+
+run:
+  run_name: domain_inference_export
+
+train:
+  mode: round1_frozen
+  freeze_backbone: true
+  freeze_pooler: true
+
+evaluation:
+  run_linear_probe: false
+  run_knn: false
+  run_centroid: false
+  run_retrieval: false

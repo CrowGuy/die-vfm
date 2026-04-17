@@ -13,6 +13,8 @@ The repository currently treats the following as formal, testable capabilities:
 - Runtime modes: `bootstrap`, `round1_frozen`
 - Current supported backbone: `dummy`
 - Current supported poolers: `mean`, `identity`, `attn_pooler_v1`
+- Domain dataset adapter v0 ingestion path (`dataset=domain`) is available for
+  CSV-manifest-based domain data in `bootstrap` and `round1_frozen`
 - Single-shard M1 embedding artifact layout: `manifest.yaml` plus `part-00000.pt`
 - `round1_frozen` is a single-shot inference/evaluation flow and does not define epoch/resume continuation semantics
 - `latest.pt`, `best.pt`, and `epoch_xxxx.pt` are currently part of the `bootstrap` checkpoint flow, not the formal `round1_frozen` contract.
@@ -26,6 +28,7 @@ The repository does not yet treat `round2_ssl`, `round3_supcon`, or training-sta
 - [Future Spec](docs/future-spec.md)
 - [Testing Spec](docs/testing-spec.md)
 - [Checkpoint / Resume Spec](docs/checkpoint-resume-spec.md)
+- [Domain Adapter Spec](docs/domain-adapter-spec.md)
 - [Implementation Roadmap](docs/implementation-roadmap.md)
 
 Document roles:
@@ -35,6 +38,8 @@ Document roles:
 - `docs/future-spec.md`: future-facing roadmap and non-current design direction
 - `docs/testing-spec.md`: verification scope for current formal behavior
 - `docs/checkpoint-resume-spec.md`: current checkpoint and resume contract
+- `docs/domain-adapter-spec.md`: domain dataset ingestion contract and v0
+  implementation boundary
 - `docs/implementation-roadmap.md`: execution order for implementation work
 
 If documentation drifts, current implementation work should follow runtime code, `configs/`, and `docs/current-spec.md` before future-facing design notes.
@@ -76,6 +81,87 @@ python scripts/run.py \
 This path exports train and val embeddings, runs the current Round1 evaluator
 set from the experiment config (`linear_probe`, `knn`, `retrieval`), and writes
 single-run outputs under `runs/my_round1_run/`.
+
+### Run domain dataset bootstrap quickstart
+
+```bash
+python scripts/run.py \
+  run.run_name=my_domain_bootstrap \
+  train.mode=bootstrap \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dummy \
+  model/pooler=mean \
+  dataset=domain \
+  dataset.manifest_path=/abs/path/to/domain_manifest.csv \
+  +dataset.label_map.ok=1
+```
+
+Use this when you want to validate domain CSV ingestion and bootstrap smoke
+artifacts. `PATH` values inside the manifest must be absolute directories.
+
+### Run domain inference-only export flow (val required)
+
+```bash
+python scripts/run.py \
+  experiment=domain_inference_export \
+  run.run_name=my_domain_infer_export \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dummy \
+  model/pooler=mean \
+  dataset=domain \
+  dataset.manifest_path=/abs/path/to/domain_manifest.csv \
+  dataset.require_non_empty_val=true
+```
+
+This preset keeps Round1 in export-only mode. Setting
+`dataset.require_non_empty_val=true` enforces inference-only `val` guarding, so
+the run fails fast when the filtered `val` split is empty.
+
+#### Empty-val failure example
+
+If your manifest only contains `Source=Train` rows (no `Source=Infer` rows),
+the inference-only guard will fail fast:
+
+```bash
+python scripts/run.py \
+  experiment=domain_inference_export \
+  run.run_name=my_domain_infer_export_fail \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dummy \
+  model/pooler=mean \
+  dataset=domain \
+  dataset.manifest_path=/abs/path/to/train_only_manifest.csv \
+  dataset.require_non_empty_val=true \
+  +dataset.label_map.ok=1
+```
+
+Expected failure wording includes:
+`Filtered val split is empty under inference-only policy.`
+
+#### Mixed-label val failure example
+
+If your `Source=Infer` subset mixes labeled and unlabeled rows, current artifact
+contract validation fails fast:
+
+```bash
+python scripts/run.py \
+  experiment=domain_inference_export \
+  run.run_name=my_domain_infer_export_mixed_val_fail \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dummy \
+  model/pooler=mean \
+  dataset=domain \
+  dataset.manifest_path=/abs/path/to/mixed_val_manifest.csv \
+  dataset.require_non_empty_val=true \
+  +dataset.label_map.ok=1
+```
+
+Expected failure wording includes:
+`Filtered val split must not mix labeled and unlabeled samples under current artifact contract.`
 
 ### Export embeddings
 

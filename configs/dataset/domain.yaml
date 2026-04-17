@@ -1,0 +1,21 @@
+name: domain
+
+manifest_path: ${oc.env:DIE_VFM_DOMAIN_MANIFEST,./data/domain/manifest.csv}
+image_size: [224, 224]
+
+merge_images: false
+single_image_source: img1
+require_non_empty_val: false
+
+did_field: DID
+img1_field: IMG_1
+img2_field: IMG_2
+source_field: Source
+label_field: Label
+path_field: PATH
+
+normalize:
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+label_map: {}

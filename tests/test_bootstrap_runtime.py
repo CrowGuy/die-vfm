@@ -1,8 +1,31 @@
 from __future__ import annotations
 
+import csv
 import subprocess
 import sys
 from pathlib import Path
+
+from PIL import Image
+
+
+def _write_domain_rgb_image(
+    path: Path,
+    *,
+    color: tuple[int, int, int],
+) -> None:
+    image = Image.new("RGB", (8, 8), color=color)
+    image.save(path)
+
+
+def _write_domain_manifest(
+    path: Path,
+    rows: list[dict[str, str]],
+) -> None:
+    fieldnames = ["DID", "IMG_1", "IMG_2", "Source", "Label", "PATH"]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def test_bootstrap_runtime_runs_dataloader_and_model_smoke_test(
@@ -80,6 +103,108 @@ def test_bootstrap_runtime_runs_dataloader_and_model_smoke_test(
     assert "backbone: DummyBackbone" in model_smoke_text
     assert "pooler: MeanPooler" in model_smoke_text
     assert "- 4" in model_smoke_text
+    assert "- 192" in model_smoke_text
+
+
+def test_bootstrap_runtime_domain_dataset_cli_smoke(
+    tmp_path: Path,
+) -> None:
+    """Tests that bootstrap can run end-to-end with dataset=domain."""
+    image_dir = tmp_path / "domain_images"
+    image_dir.mkdir()
+    _write_domain_rgb_image(image_dir / "a.png", color=(255, 0, 0))
+    _write_domain_rgb_image(image_dir / "b.png", color=(0, 255, 0))
+
+    manifest_path = tmp_path / "domain_manifest.csv"
+    _write_domain_manifest(manifest_path, [
+        {
+            "DID": "train_1",
+            "IMG_1": "a.png",
+            "IMG_2": "",
+            "Source": "Train",
+            "Label": "ok",
+            "PATH": str(image_dir.resolve()),
+        },
+        {
+            "DID": "train_2",
+            "IMG_1": "b.png",
+            "IMG_2": "",
+            "Source": "Train",
+            "Label": "ok",
+            "PATH": str(image_dir.resolve()),
+        },
+    ])
+
+    run_name = "pytest-bootstrap-domain-runtime"
+    command = [
+        sys.executable,
+        "scripts/run.py",
+        f"run.output_root={tmp_path}",
+        f"run.run_name={run_name}",
+        "system.num_workers=0",
+        "system.device=cpu",
+        "model/backbone=dummy",
+        "model/pooler=mean",
+        "dataset=domain",
+        f"dataset.manifest_path={manifest_path}",
+        "+dataset.label_map.ok=1",
+        "dataloader.batch_size=2",
+        "train.run_dataloader_smoke_test=true",
+        "train.run_model_forward_smoke_test=true",
+    ]
+
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, (
+        f"run.py failed with stderr:\n{result.stderr}\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+    run_dir = tmp_path / run_name
+    assert run_dir.exists()
+    assert (run_dir / "config.yaml").exists()
+
+    log_path = run_dir / "logs" / "run.log"
+    assert log_path.exists()
+    log_text = log_path.read_text(encoding="utf-8")
+
+    assert "Starting bootstrap runtime." in log_text
+    assert "Dataloader smoke test passed." in log_text
+    assert "Batch image shape: (2, 3, 224, 224)" in log_text
+    assert "Batch label shape: (2,)" in log_text
+    assert "Saved latest checkpoint:" in log_text
+    assert "Saved epoch checkpoint:" in log_text
+    assert "Saved best checkpoint:" in log_text
+    assert "Bootstrap runtime completed successfully." in log_text
+    assert "Dataset metadata:" in log_text
+
+    dataset_metadata_path = run_dir / "dataset_metadata.yaml"
+    assert dataset_metadata_path.exists()
+    dataset_metadata_text = dataset_metadata_path.read_text(encoding="utf-8")
+    assert "dataset_name: domain" in dataset_metadata_text
+    assert "split: train" in dataset_metadata_text
+    assert "num_samples: 2" in dataset_metadata_text
+    assert "has_labels: true" in dataset_metadata_text
+    assert "merge_images: false" in dataset_metadata_text
+    assert "single_image_source: img1" in dataset_metadata_text
+
+    checkpoint_dir = run_dir / "checkpoints"
+    assert checkpoint_dir.exists()
+    assert (checkpoint_dir / "latest.pt").exists()
+    assert (checkpoint_dir / "best.pt").exists()
+    assert (checkpoint_dir / "epoch_0000.pt").exists()
+
+    model_smoke_path = run_dir / "model_smoke.yaml"
+    assert model_smoke_path.exists()
+    model_smoke_text = model_smoke_path.read_text(encoding="utf-8")
+    assert "name: DieVFMModel" in model_smoke_text
+    assert "embedding_dim: 192" in model_smoke_text
+    assert "- 2" in model_smoke_text
     assert "- 192" in model_smoke_text
 
 def test_bootstrap_runtime_writes_checkpoint_set(tmp_path: Path) -> None:

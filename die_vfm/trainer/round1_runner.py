@@ -64,57 +64,89 @@ class Round1FrozenRunner:
 
     def run(self) -> dict[str, float]:
         """Runs the Round1 frozen experiment end to end."""
-        enabled_evaluators = self._run_preflight_validation()
+        self._run_preflight_validation()
 
         model = build_model(self._cfg.model)
         model.to(self._device)
         self._apply_freeze_policy(model)
 
+        requested_evaluators = self._resolve_requested_round1_evaluators()
         artifacts = self._resolve_run_artifacts()
         self._ensure_run_dirs(
             artifacts=artifacts,
-            enabled_evaluators=enabled_evaluators,
+            requested_evaluators=requested_evaluators,
         )
 
         LOGGER.info("Round1 frozen runner started.")
-        LOGGER.info("Enabled Round1 evaluators: %s", enabled_evaluators)
+        LOGGER.info("Requested Round1 evaluators: %s", requested_evaluators)
 
-        train_loader = build_dataloader(self._cfg, split="train")
-        val_loader = build_dataloader(self._cfg, split="val")
+        train_loader = self._build_split_dataloader_or_none(split="train")
+        val_loader = self._build_split_dataloader_or_none(split="val")
+        if train_loader is None and val_loader is None:
+            raise ValueError(
+                "round1_frozen requires at least one non-empty split among "
+                "train/val."
+            )
 
-        train_manifest = self._export_split(
-            model=model,
-            dataloader=train_loader,
-            split="train",
-            output_dir=artifacts.train_embedding_dir,
-        )
-        val_manifest = self._export_split(
-            model=model,
-            dataloader=val_loader,
-            split="val",
-            output_dir=artifacts.val_embedding_dir,
-        )
+        train_manifest = None
+        if train_loader is not None:
+            train_manifest = self._export_split(
+                model=model,
+                dataloader=train_loader,
+                split="train",
+                output_dir=artifacts.train_embedding_dir,
+            )
+        else:
+            LOGGER.info("Skipped train split export because split is unavailable.")
+
+        val_manifest = None
+        if val_loader is not None:
+            val_manifest = self._export_split(
+                model=model,
+                dataloader=val_loader,
+                split="val",
+                output_dir=artifacts.val_embedding_dir,
+            )
+        else:
+            LOGGER.info("Skipped val split export because split is unavailable.")
 
         LOGGER.info(
-            "Embedding export finished. train_samples=%d val_samples=%d embedding_dim=%d",
-            int(train_manifest.num_samples),
-            int(val_manifest.num_samples),
-            int(train_manifest.embedding_dim),
+            "Embedding export finished. train_samples=%d val_samples=%d",
+            int(train_manifest.num_samples) if train_manifest is not None else 0,
+            int(val_manifest.num_samples) if val_manifest is not None else 0,
         )
 
-        metrics = self._run_evaluators(artifacts)
+        executed_evaluators: list[str] = []
+        if train_manifest is not None and val_manifest is not None:
+            if not requested_evaluators:
+                raise ValueError(
+                    "Round1 requires at least one enabled evaluator when both "
+                    "train and val splits are available. Set one of "
+                    "evaluation.run_linear_probe / run_knn / run_retrieval."
+                )
+            metrics = self._run_evaluators(artifacts)
+            executed_evaluators = requested_evaluators
+        else:
+            if requested_evaluators:
+                LOGGER.warning(
+                    "Skipping evaluator execution because round1_frozen is in "
+                    "single-split export mode."
+                )
+            metrics = {}
+
         self._write_run_summary(
             metrics=metrics,
             artifacts=artifacts,
             train_manifest=train_manifest,
             val_manifest=val_manifest,
-            enabled_evaluators=enabled_evaluators,
+            executed_evaluators=executed_evaluators,
+            requested_evaluators=requested_evaluators,
         )
 
         LOGGER.info("Round1 frozen runner finished.")
         return metrics
 
-    def _run_preflight_validation(self) -> list[str]:
+    def _run_preflight_validation(self) -> None:
         """Validates Round1 runtime assumptions before any heavy work starts."""
         if bool(OmegaConf.select(self._cfg, "train.resume.enabled", default=False)):
             raise ValueError(
@@ -129,24 +161,13 @@ class Round1FrozenRunner:
                 "Use standalone centroid script or disable evaluation.run_centroid."
             )
 
-        evaluator_flags = self._resolve_round1_evaluator_flags()
-        enabled_evaluators = [
-            name for name, is_enabled in evaluator_flags.items() if is_enabled
-        ]
-        if not enabled_evaluators:
-            raise ValueError(
-                "Round1 requires at least one enabled evaluator. "
-                "Set one of evaluation.run_linear_probe / run_knn / run_retrieval."
-            )
-
         round1_dir = self._resolve_run_artifacts().round1_dir
         if round1_dir.exists() and any(round1_dir.iterdir()):
             raise FileExistsError(
                 "Round1 single-shot run would overwrite existing outputs. "
                 f"path={round1_dir}. Use a new run_name or clean the previous Round1 outputs."
             )
-
-        return enabled_evaluators
+        return None
 
     def _resolve_round1_evaluator_flags(self) -> dict[str, bool]:
         """Returns root-level evaluator enable flags used by Round1 orchestration."""
@@ -159,6 +180,13 @@ class Round1FrozenRunner:
                 OmegaConf.select(self._cfg, "evaluation.run_retrieval", default=False)
             ),
         }
+
+    def _resolve_requested_round1_evaluators(self) -> list[str]:
+        """Returns requested evaluator names from root orchestration flags."""
+        evaluator_flags = self._resolve_round1_evaluator_flags()
+        return sorted([
+            name for name, is_enabled in evaluator_flags.items() if is_enabled
+        ])
 
     def _apply_freeze_policy(self, model: torch.nn.Module) -> None:
         """Applies the minimal Round1 freeze policy."""
@@ -198,19 +226,46 @@ class Round1FrozenRunner:
     def _ensure_run_dirs(
         self,
         artifacts: Round1RunArtifacts,
-        enabled_evaluators: list[str],
+        requested_evaluators: list[str],
     ) -> None:
         """Creates required Round1 output directories."""
         artifacts.train_embedding_dir.mkdir(parents=True, exist_ok=True)
         artifacts.val_embedding_dir.mkdir(parents=True, exist_ok=True)
 
-        enabled_set = set(enabled_evaluators)
+        enabled_set = set(requested_evaluators)
         if "linear_probe" in enabled_set:
             artifacts.linear_probe_dir.mkdir(parents=True, exist_ok=True)
         if "knn" in enabled_set:
             artifacts.knn_dir.mkdir(parents=True, exist_ok=True)
         if "retrieval" in enabled_set:
             artifacts.retrieval_dir.mkdir(parents=True, exist_ok=True)
+
+    def _build_split_dataloader_or_none(self, split: str) -> Any:
+        """Builds one split dataloader or returns None when split is unavailable."""
+        try:
+            dataloader = build_dataloader(self._cfg, split=split)
+        except ValueError as exc:
+            dataset_name = str(OmegaConf.select(self._cfg, "dataset.name", default=""))
+            if (
+                split == "train"
+                and dataset_name == "domain"
+                and "Filtered train split is empty" in str(exc)
+            ):
+                LOGGER.info(
+                    "Domain train split unavailable for round1_frozen: %s",
+                    exc,
+                )
+                return None
+            raise
+
+        dataset_size = len(dataloader.dataset)
+        if dataset_size == 0:
+            LOGGER.info(
+                "Skipping %s split export because dataloader dataset is empty.",
+                split,
+            )
+            return None
+        return dataloader
 
     def _export_split(
         self,
@@ -321,12 +376,13 @@ class Round1FrozenRunner:
         *,
         metrics: dict[str, float],
         artifacts: Round1RunArtifacts,
-        train_manifest: Any,
-        val_manifest: Any,
-        enabled_evaluators: list[str],
+        train_manifest: Any | None,
+        val_manifest: Any | None,
+        executed_evaluators: list[str],
+        requested_evaluators: list[str],
     ) -> None:
         """Writes a compact Round1 run summary."""
-        enabled_set = set(enabled_evaluators)
+        enabled_set = set(executed_evaluators)
         evaluation_dirs: dict[str, str] = {}
         if "linear_probe" in enabled_set:
             evaluation_dirs["linear_probe"] = str(artifacts.linear_probe_dir)
@@ -345,21 +401,14 @@ class Round1FrozenRunner:
                 "supports_checkpoint_continuation": False,
             },
             "execution": {
-                "enabled_evaluators": sorted(enabled_evaluators),
+                "enabled_evaluators": sorted(executed_evaluators),
+                "requested_evaluators": sorted(requested_evaluators),
                 "freeze_backbone": bool(self._cfg.train.freeze_backbone),
                 "freeze_pooler": bool(self._cfg.train.freeze_pooler),
             },
             "manifests": {
-                "train": {
-                    "num_samples": int(train_manifest.num_samples),
-                    "embedding_dim": int(train_manifest.embedding_dim),
-                    "has_labels": bool(train_manifest.has_labels),
-                },
-                "val": {
-                    "num_samples": int(val_manifest.num_samples),
-                    "embedding_dim": int(val_manifest.embedding_dim),
-                    "has_labels": bool(val_manifest.has_labels),
-                },
+                "train": self._manifest_summary(train_manifest),
+                "val": self._manifest_summary(val_manifest),
             },
             "metrics": metrics,
             "artifacts": {
@@ -376,3 +425,20 @@ class Round1FrozenRunner:
         )
         with artifacts.summary_json_path.open("w", encoding="utf-8") as file:
             json.dump(summary, file, indent=2, sort_keys=True)
+
+    def _manifest_summary(self, manifest: Any | None) -> dict[str, Any]:
+        """Builds a summary dictionary for one split manifest."""
+        if manifest is None:
+            return {
+                "available": False,
+                "num_samples": 0,
+                "embedding_dim": None,
+                "has_labels": False,
+            }
+
+        return {
+            "available": True,
+            "num_samples": int(manifest.num_samples),
+            "embedding_dim": int(manifest.embedding_dim),
+            "has_labels": bool(manifest.has_labels),
+        }
