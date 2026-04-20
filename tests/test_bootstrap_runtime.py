@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import csv
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 from PIL import Image
+import torch
 
 
 def _write_domain_rgb_image(
@@ -26,6 +28,55 @@ def _write_domain_manifest(
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_local_dinov2_hub_repo(path: Path) -> None:
+    """Creates a minimal local torch.hub repo for offline dinov2 smoke."""
+    path.mkdir(parents=True, exist_ok=True)
+    hubconf_path = path / "hubconf.py"
+    hubconf_path.write_text(
+        "\n".join([
+            "import torch",
+            "from torch import nn",
+            "",
+            "class _LocalDINO(nn.Module):",
+            "    def __init__(self, feature_dim: int):",
+            "        super().__init__()",
+            "        self.feature_dim = int(feature_dim)",
+            "        self.weight = nn.Parameter(torch.ones(1))",
+            "",
+            "    def forward_features(self, image):",
+            "        batch_size, _, height, width = image.shape",
+            "        patch_size = 14",
+            "        num_patches = (height // patch_size) * (width // patch_size)",
+            "        return {",
+            "            'x_norm_patchtokens': torch.zeros(",
+            "                (batch_size, num_patches, self.feature_dim),",
+            "                device=image.device,",
+            "                dtype=image.dtype,",
+            "            ),",
+            "            'x_norm_clstoken': torch.zeros(",
+            "                (batch_size, self.feature_dim),",
+            "                device=image.device,",
+            "                dtype=image.dtype,",
+            "            ),",
+            "        }",
+            "",
+            "def dinov2_vits14(pretrained: bool = False):",
+            "    return _LocalDINO(feature_dim=384)",
+            "",
+            "def dinov2_vitb14(pretrained: bool = False):",
+            "    return _LocalDINO(feature_dim=768)",
+            "",
+            "def dinov2_vitl14(pretrained: bool = False):",
+            "    return _LocalDINO(feature_dim=1024)",
+            "",
+            "def dinov2_vitg14(pretrained: bool = False):",
+            "    return _LocalDINO(feature_dim=1536)",
+            "",
+        ]),
+        encoding="utf-8",
+    )
 
 
 def test_bootstrap_runtime_runs_dataloader_and_model_smoke_test(
@@ -206,6 +257,204 @@ def test_bootstrap_runtime_domain_dataset_cli_smoke(
     assert "embedding_dim: 192" in model_smoke_text
     assert "- 2" in model_smoke_text
     assert "- 192" in model_smoke_text
+
+
+def test_bootstrap_runtime_dinov2_cli_smoke_with_fake_hub(
+    tmp_path: Path,
+) -> None:
+    """Tests bootstrap runtime with model/backbone=dinov2 under fake hub."""
+    run_name = "pytest-bootstrap-dinov2-runtime"
+    command = [
+        sys.executable,
+        "scripts/run.py",
+        f"run.output_root={tmp_path}",
+        f"run.run_name={run_name}",
+        "system.num_workers=0",
+        "system.device=cpu",
+        "model/backbone=dinov2",
+        "model.backbone.pretrained=false",
+        "model.backbone.freeze=false",
+        "train.freeze_backbone=false",
+        "model/pooler=mean",
+        "dataset=dummy",
+        "train.run_dataloader_smoke_test=true",
+        "train.run_model_forward_smoke_test=true",
+    ]
+
+    env = os.environ.copy()
+    env["DIE_VFM_DINOV2_FAKE_HUB"] = "1"
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f"run.py failed with stderr:\n{result.stderr}\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+    run_dir = tmp_path / run_name
+    log_path = run_dir / "logs" / "run.log"
+    log_text = log_path.read_text(encoding="utf-8")
+
+    assert "Backbone: DINOv2Backbone" in log_text
+    assert "Embedding shape: (4, 768)" in log_text
+    assert "Bootstrap runtime completed successfully." in log_text
+
+    model_smoke_path = run_dir / "model_smoke.yaml"
+    model_smoke_text = model_smoke_path.read_text(encoding="utf-8")
+    assert "embedding_dim: 768" in model_smoke_text
+    assert "backbone: DINOv2Backbone" in model_smoke_text
+
+
+def test_bootstrap_runtime_rejects_conflicting_dinov2_freeze_policy(
+    tmp_path: Path,
+) -> None:
+    """Fails fast when train/model freeze flags conflict for dinov2."""
+    run_name = "pytest-bootstrap-dinov2-conflict"
+    command = [
+        sys.executable,
+        "scripts/run.py",
+        f"run.output_root={tmp_path}",
+        f"run.run_name={run_name}",
+        "system.num_workers=0",
+        "system.device=cpu",
+        "model/backbone=dinov2",
+        "model.backbone.pretrained=false",
+        "model.backbone.freeze=false",
+        "train.freeze_backbone=true",
+        "model/pooler=mean",
+        "dataset=dummy",
+        "train.run_dataloader_smoke_test=true",
+    ]
+
+    env = os.environ.copy()
+    env["DIE_VFM_DINOV2_FAKE_HUB"] = "1"
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "Conflicting freeze policy for dinov2" in (result.stdout + result.stderr)
+
+
+def test_bootstrap_runtime_dinov2_offline_local_asset_cli_smoke(
+    tmp_path: Path,
+) -> None:
+    """Tests offline dinov2 bootstrap path with local hub repo asset."""
+    local_repo_path = tmp_path / "local_dinov2_repo"
+    _write_local_dinov2_hub_repo(local_repo_path)
+
+    run_name = "pytest-bootstrap-dinov2-offline-local-asset"
+    command = [
+        sys.executable,
+        "scripts/run.py",
+        f"run.output_root={tmp_path}",
+        f"run.run_name={run_name}",
+        "system.num_workers=0",
+        "system.device=cpu",
+        "model/backbone=dinov2",
+        "model.backbone.pretrained=false",
+        "model.backbone.freeze=false",
+        "model.backbone.allow_network=false",
+        f"model.backbone.local_repo_path={local_repo_path}",
+        "train.freeze_backbone=false",
+        "model/pooler=mean",
+        "dataset=dummy",
+        "train.run_dataloader_smoke_test=true",
+        "train.run_model_forward_smoke_test=true",
+    ]
+
+    env = os.environ.copy()
+    env.pop("DIE_VFM_DINOV2_FAKE_HUB", None)
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f"run.py failed with stderr:\n{result.stderr}\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+    run_dir = tmp_path / run_name
+    log_path = run_dir / "logs" / "run.log"
+    log_text = log_path.read_text(encoding="utf-8")
+
+    assert "Backbone: DINOv2Backbone" in log_text
+    assert "Embedding shape: (4, 768)" in log_text
+    assert "Bootstrap runtime completed successfully." in log_text
+
+    model_smoke_path = run_dir / "model_smoke.yaml"
+    model_smoke_text = model_smoke_path.read_text(encoding="utf-8")
+    assert "embedding_dim: 768" in model_smoke_text
+    assert "backbone: DINOv2Backbone" in model_smoke_text
+
+
+def test_bootstrap_runtime_dinov2_offline_local_checkpoint_cli_smoke(
+    tmp_path: Path,
+) -> None:
+    """Tests offline pretrained dinov2 bootstrap path with local checkpoint."""
+    local_repo_path = tmp_path / "local_dinov2_repo"
+    _write_local_dinov2_hub_repo(local_repo_path)
+
+    checkpoint_path = tmp_path / "local_dinov2.ckpt"
+    torch.save({"weight": torch.ones(1)}, checkpoint_path)
+
+    run_name = "pytest-bootstrap-dinov2-offline-checkpoint"
+    command = [
+        sys.executable,
+        "scripts/run.py",
+        f"run.output_root={tmp_path}",
+        f"run.run_name={run_name}",
+        "system.num_workers=0",
+        "system.device=cpu",
+        "model/backbone=dinov2",
+        "model.backbone.pretrained=true",
+        "model.backbone.freeze=false",
+        "model.backbone.allow_network=false",
+        f"model.backbone.local_repo_path={local_repo_path}",
+        f"model.backbone.local_checkpoint_path={checkpoint_path}",
+        "train.freeze_backbone=false",
+        "model/pooler=mean",
+        "dataset=dummy",
+        "train.run_dataloader_smoke_test=true",
+        "train.run_model_forward_smoke_test=true",
+    ]
+
+    env = os.environ.copy()
+    env.pop("DIE_VFM_DINOV2_FAKE_HUB", None)
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f"run.py failed with stderr:\n{result.stderr}\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+    run_dir = tmp_path / run_name
+    log_path = run_dir / "logs" / "run.log"
+    log_text = log_path.read_text(encoding="utf-8")
+
+    assert "Backbone: DINOv2Backbone" in log_text
+    assert "Embedding shape: (4, 768)" in log_text
+    assert "Bootstrap runtime completed successfully." in log_text
+
 
 def test_bootstrap_runtime_writes_checkpoint_set(tmp_path: Path) -> None:
   """Tests that bootstrap writes latest/best/epoch checkpoints."""

@@ -20,6 +20,8 @@ The current repository treats the following as formal, testable capabilities:
 - domain dataset adapter ingestion contract (`dataset=domain`) for CSV-manifest
   validation, split filtering, and label canonicalization
 - model output and pooler contract
+- promoted `dinov2` backbone contract for `bootstrap` and `round1_frozen`,
+  including offline local-asset loading semantics
 - `bootstrap` smoke runtime path
 - embedding artifact export and load
 - standalone evaluator execution:
@@ -181,6 +183,8 @@ Acceptance criteria:
 - the explicit `debug_model_smoke` preset applies its intended root overrides
 - dataset builders return current dataset adapters and dataloaders
 - pooler and model builders resolve current supported runtime objects
+- `model/backbone=dinov2` composes expected promotion-scope fields including
+  `allow_network`, `local_repo_path`, and `local_checkpoint_path`
 
 Existing tests:
 
@@ -228,12 +232,19 @@ Current capability:
 Acceptance criteria:
 
 - `dummy` backbone produces the expected feature contract
+- `dinov2` backbone produces the expected feature contract in promotion scope
+  (`bootstrap`, `round1_frozen`)
+- `dinov2` loading semantics enforce architecture/weight source boundaries:
+  - offline mode rejects missing local repo
+  - offline pretrained mode rejects missing local checkpoint
+  - invalid local repo/checkpoint paths fail fast with explicit wording
 - `mean` and `attn_pooler_v1` satisfy current output and validation behavior
 - the top-level model forward path returns an embedding-centered output without requiring downstream code to assume `cls_token`
 
 Existing tests:
 
 - `tests/models/test_dummy_backbone.py`
+- `tests/models/test_dinov2_backbone.py`
 - `tests/models/test_mean_pooler.py`
 - `tests/test_attn_pooler_v1.py`
 - `tests/models/test_model_forward_smoke.py`
@@ -256,6 +267,13 @@ Acceptance criteria:
 - bootstrap writes the current checkpoint set
 - bootstrap resume entry behavior works for current `warm_start` and `full_resume` scope
 - bootstrap supports a script-level smoke path with `dataset=domain`
+- bootstrap supports script-level `model/backbone=dinov2` smoke in promoted
+  scope
+- bootstrap supports an offline local-asset smoke path for `dinov2`
+  (`allow_network=false` with `local_repo_path`)
+- bootstrap supports an offline pretrained local-checkpoint smoke path for
+  `dinov2` (`allow_network=false` with `pretrained=true`,
+  `local_repo_path`, and `local_checkpoint_path`)
 
 Existing tests:
 
@@ -351,6 +369,14 @@ Acceptance criteria:
 - Round1 contract does not rely on `train.num_epochs` or `train.resume.*`
 - Round1 contract does not rely on training-style checkpoint continuation semantics
 - mixed-label splits are rejected by the current artifact export contract
+- script-level `round1_frozen` smoke covers promoted `dinov2` runtime path
+- `round1_frozen` supports an offline local-asset path for `dinov2`
+  (`allow_network=false` with `local_repo_path`)
+- `round1_frozen` supports an offline pretrained local-checkpoint path for
+  `dinov2` (`allow_network=false` with `pretrained=true`,
+  `local_repo_path`, and `local_checkpoint_path`)
+- `round1_frozen` offline dinov2 path fails fast with explicit wording when
+  required local repo/checkpoint assets are missing
 
 Existing tests:
 

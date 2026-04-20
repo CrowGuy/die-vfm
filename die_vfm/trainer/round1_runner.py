@@ -148,6 +148,23 @@ class Round1FrozenRunner:
 
     def _run_preflight_validation(self) -> None:
         """Validates Round1 runtime assumptions before any heavy work starts."""
+        backbone_name = str(
+            OmegaConf.select(self._cfg, "model.backbone.name", default="")
+        )
+        if backbone_name == "dinov2":
+            model_freeze = bool(
+                OmegaConf.select(self._cfg, "model.backbone.freeze", default=False)
+            )
+            train_freeze = bool(
+                OmegaConf.select(self._cfg, "train.freeze_backbone", default=False)
+            )
+            if model_freeze != train_freeze:
+                raise ValueError(
+                    "Conflicting freeze policy for dinov2: "
+                    "model.backbone.freeze must match train.freeze_backbone under "
+                    "current support."
+                )
+
         if bool(OmegaConf.select(self._cfg, "train.resume.enabled", default=False)):
             raise ValueError(
                 "round1_frozen does not support train.resume.*. "

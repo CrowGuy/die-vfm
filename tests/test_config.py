@@ -99,3 +99,17 @@ def test_domain_inference_export_preset_composes_expected_fields() -> None:
     assert cfg.evaluation.run_knn is False
     assert cfg.evaluation.run_centroid is False
     assert cfg.evaluation.run_retrieval is False
+
+
+def test_dinov2_backbone_preset_composes_expected_fields() -> None:
+    """Tests that model/backbone=dinov2 composes expected config fields."""
+    cfg = _compose_config(overrides=["model/backbone=dinov2"])
+
+    assert cfg.model.backbone.name == "dinov2"
+    assert cfg.model.backbone.variant == "vit_base"
+    assert cfg.model.backbone.pretrained is True
+    assert cfg.model.backbone.freeze is False
+    assert cfg.model.backbone.return_cls_token is True
+    assert cfg.model.backbone.allow_network is True
+    assert cfg.model.backbone.local_repo_path is None
+    assert cfg.model.backbone.local_checkpoint_path is None

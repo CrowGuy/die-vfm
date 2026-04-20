@@ -183,12 +183,31 @@ class ModelOutput:
 Formally supported in current spec:
 
 - `dummy`
-
-Present in the codebase but not yet formal current-spec support:
-
 - `dinov2`
 
-`dinov2` remains future-facing until builder wiring, runtime validation, and tests are aligned.
+Current `dinov2` support boundary:
+
+- runtime modes: `bootstrap`, `round1_frozen`
+- current promotion scope does not include Round2+ training semantics
+- `round1_frozen` remains a frozen inference/evaluation orchestration path
+- freeze-policy contract requires
+  `model.backbone.freeze == train.freeze_backbone`
+
+Current `dinov2` loading semantics:
+
+- config surface:
+  - `model.backbone.allow_network`
+  - `model.backbone.local_repo_path`
+  - `model.backbone.local_checkpoint_path`
+- architecture source resolution:
+  - use `local_repo_path` when provided
+  - otherwise allow hub/network resolution only when `allow_network=true`
+  - fail-fast when `allow_network=false` and no local repo is provided
+- weight source resolution:
+  - `pretrained=false` skips pretrained checkpoint loading
+  - `pretrained=true` with `local_checkpoint_path` loads local checkpoint
+  - `pretrained=true` and no local checkpoint requires
+    `allow_network=true`, otherwise fail-fast
 
 ### Poolers
 

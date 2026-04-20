@@ -533,6 +533,34 @@ def test_round1_runner_rejects_resume_semantics(
         runner.run()
 
 
+def test_round1_runner_rejects_conflicting_dinov2_freeze_policy(
+    tmp_path: Path,
+) -> None:
+    cfg = _build_cfg(tmp_path)
+    cfg.model.backbone = {
+        "name": "dinov2",
+        "variant": "vit_base",
+        "pretrained": False,
+        "freeze": False,
+        "return_cls_token": True,
+        "allow_network": True,
+        "local_repo_path": None,
+        "local_checkpoint_path": None,
+    }
+    cfg.train.freeze_backbone = True
+
+    run_dir = Path(cfg.run.output_root) / cfg.run.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    runner = Round1FrozenRunner(
+        cfg=cfg,
+        run_dir=run_dir,
+    )
+
+    with pytest.raises(ValueError, match="Conflicting freeze policy for dinov2"):
+        runner.run()
+
+
 def test_round1_runner_does_not_depend_on_num_epochs_or_selection_metric(
     tmp_path: Path,
 ) -> None:

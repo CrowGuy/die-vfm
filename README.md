@@ -11,7 +11,8 @@ The repository currently treats the following as formal, testable capabilities:
 - Token-centric model pipeline: `Dataset -> Model -> Embedding Artifact -> Evaluator`
 - Artifact-driven evaluators: `linear_probe`, `knn`, `centroid`, `retrieval`; `centroid` is currently supported as a standalone evaluator, while `round1_frozen` currently orchestrates `linear_probe`, `knn`, and `retrieval`
 - Runtime modes: `bootstrap`, `round1_frozen`
-- Current supported backbone: `dummy`
+- Current supported backbones: `dummy`, `dinov2` (current promotion scope:
+  `bootstrap` and `round1_frozen`)
 - Current supported poolers: `mean`, `identity`, `attn_pooler_v1`
 - Domain dataset adapter v0 ingestion path (`dataset=domain`) is available for
   CSV-manifest-based domain data in `bootstrap` and `round1_frozen`
@@ -65,6 +66,26 @@ python scripts/run.py \
 
 This path exercises the default `bootstrap` flow and writes run artifacts, smoke metadata, and checkpoints under `runs/default/`.
 
+### Run dinov2 bootstrap smoke with offline local assets
+
+```bash
+python scripts/run.py \
+  run.run_name=my_dinov2_offline_bootstrap \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dinov2 \
+  model.backbone.pretrained=false \
+  model.backbone.allow_network=false \
+  model.backbone.local_repo_path=/abs/path/to/local/dinov2_repo \
+  model/pooler=mean \
+  dataset=dummy
+```
+
+This path forces local architecture loading (`source=local`) and rejects
+network fallback. If you set `model.backbone.pretrained=true`, provide
+`model.backbone.local_checkpoint_path=/abs/path/to/checkpoint.pt` for offline
+runs.
+
 ### Run Round1 frozen flow
 
 ```bash
@@ -81,6 +102,76 @@ python scripts/run.py \
 This path exports train and val embeddings, runs the current Round1 evaluator
 set from the experiment config (`linear_probe`, `knn`, `retrieval`), and writes
 single-run outputs under `runs/my_round1_run/`.
+
+### Run Round1 frozen with dinov2 offline local assets
+
+```bash
+python scripts/run.py \
+  experiment=round1_frozen \
+  run.run_name=my_round1_dinov2_offline \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dinov2 \
+  model/pooler=mean \
+  model.backbone.pretrained=false \
+  model.backbone.freeze=true \
+  model.backbone.allow_network=false \
+  model.backbone.local_repo_path=/abs/path/to/local/dinov2_repo \
+  train.freeze_backbone=true \
+  train.freeze_pooler=true
+```
+
+This path keeps Round1 in current frozen orchestration semantics while forcing
+offline local architecture loading for `dinov2`. If you set
+`model.backbone.pretrained=true`, also set
+`model.backbone.local_checkpoint_path=/abs/path/to/checkpoint.pt`.
+
+#### Offline failure example (missing local repo)
+
+If `allow_network=false` and `model.backbone.local_repo_path` is not set,
+Round1 fails fast before export/evaluation:
+
+```bash
+python scripts/run.py \
+  experiment=round1_frozen \
+  run.run_name=my_round1_dinov2_offline_fail \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dinov2 \
+  model/pooler=mean \
+  model.backbone.pretrained=false \
+  model.backbone.freeze=true \
+  model.backbone.allow_network=false \
+  train.freeze_backbone=true \
+  train.freeze_pooler=true
+```
+
+Expected failure wording includes:
+`DINOv2 architecture source is unavailable: set model.backbone.local_repo_path or enable model.backbone.allow_network=true.`
+
+#### Offline failure example (missing local checkpoint)
+
+If `model.backbone.pretrained=true` and `allow_network=false`, Round1 also
+requires `model.backbone.local_checkpoint_path`:
+
+```bash
+python scripts/run.py \
+  experiment=round1_frozen \
+  run.run_name=my_round1_dinov2_offline_missing_checkpoint \
+  system.device=cpu \
+  system.num_workers=0 \
+  model/backbone=dinov2 \
+  model/pooler=mean \
+  model.backbone.pretrained=true \
+  model.backbone.freeze=true \
+  model.backbone.allow_network=false \
+  model.backbone.local_repo_path=/abs/path/to/local/dinov2_repo \
+  train.freeze_backbone=true \
+  train.freeze_pooler=true
+```
+
+Expected failure wording includes:
+`DINOv2 pretrained offline load requires model.backbone.local_checkpoint_path when model.backbone.allow_network=false.`
 
 ### Run domain dataset bootstrap quickstart
 
@@ -219,7 +310,8 @@ die-vfm/
 
 ## Notes
 
-- `dummy` is the only formally supported backbone in the current spec.
-- `dinov2` exists in the codebase but is not yet fully wired as a current formal capability.
+- `dummy` and `dinov2` are currently supported backbones.
+- current `dinov2` promotion scope is limited to `bootstrap` and
+  `round1_frozen`; Round2+ training semantics remain future scope.
 - `bootstrap` is the implicit default when `train.mode` is not set by the selected config composition.
 - Round1 is currently positioned as a single-shot inference/evaluation runner; training-stage resume semantics are future Round2+ scope.

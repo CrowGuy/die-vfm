@@ -78,15 +78,18 @@ To avoid semantic drift between rounds:
 
 ## Backbone Roadmap
 
-Target future formal backbones include:
+Current formal backbone support already includes:
 
-- `dinov2` as a fully wired production-capable option
+- `dummy`
+- promoted `dinov2` (within current promotion scope:
+  `bootstrap` and `round1_frozen`)
 
 Longer-term backbone expansion may include additional token-centric models, but only after builder wiring, config support, documentation, and tests are aligned.
 
 ### `dinov2` Promotion Scope
 
-The next planned backbone-promotion track is intentionally narrow:
+The `dinov2` promotion that has landed in current scope was intentionally
+narrow:
 
 - promote only `dinov2`
 - promote only for current runtime modes:
@@ -95,7 +98,7 @@ The next planned backbone-promotion track is intentionally narrow:
 - do not use this promotion to introduce Round2+ training semantics
 - do not use this promotion to open a multi-backbone support matrix
 
-Target outcome of this promotion:
+Landed outcome of this promotion:
 
 - `dinov2` can be selected through current config composition
 - `bootstrap` can build the model and complete forward/runtime smoke with
@@ -103,13 +106,72 @@ Target outcome of this promotion:
 - `round1_frozen` can run frozen embedding export and artifact-driven
   evaluation with `dinov2`
 
-Required promotion layers:
+Landed promotion layers:
 
 - backbone builder support
 - runtime-usable config contract
 - runtime validation for current supported paths
 - dedicated tests
 - current-spec and README wording updates
+
+### `dinov2` Loading Semantics Checklist
+
+This section defines the agreed loading semantics that now form the promoted
+current-scope contract for `dinov2`.
+
+Config surface:
+
+- `model.backbone.allow_network: bool`
+- `model.backbone.local_repo_path: str | null`
+- `model.backbone.local_checkpoint_path: str | null`
+
+Semantics:
+
+- `pretrained` controls weight source only.
+- architecture source resolution is independent from `pretrained`.
+- `allow_network` controls whether missing local sources may be resolved via
+  network-backed hub behavior.
+
+Architecture source resolution:
+
+1. If `local_repo_path` is provided, runtime should use it as the architecture
+   source.
+2. Else if `allow_network=true`, runtime may resolve architecture code through
+   `torch.hub`.
+3. Else fail-fast.
+
+Weights source resolution:
+
+1. If `pretrained=false`, runtime should skip pretrained checkpoint loading.
+2. If `pretrained=true` and `local_checkpoint_path` is provided, runtime should
+   load weights from that local checkpoint after validating path existence and
+   file type.
+3. If `pretrained=true` and `local_checkpoint_path` is not provided:
+   - allow network-backed weight resolution only when `allow_network=true`
+   - fail-fast when `allow_network=false`
+
+Fail-fast wording policy:
+
+- Errors should explicitly report:
+  - active mode and relevant config keys
+  - the missing local source (`repo` vs `checkpoint`)
+  - one concrete remediation path
+- Recommended wording patterns:
+  - `DINOv2 architecture source is unavailable: set model.backbone.local_repo_path or enable model.backbone.allow_network=true.`
+  - `DINOv2 pretrained offline load requires model.backbone.local_checkpoint_path when model.backbone.allow_network=false.`
+  - `Configured DINOv2 local checkpoint does not exist: path=<...>.`
+  - `Configured DINOv2 local checkpoint must point to a file: path=<...>.`
+  - `Configured DINOv2 local repo does not exist: path=<...>.`
+  - `Configured DINOv2 local repo must point to a directory: path=<...>.`
+  - `DINOv2 local_checkpoint_path is only valid when model.backbone.pretrained=true.`
+
+Offline deployment checklist:
+
+- prepare local DINOv2 repo and checkpoint assets on a networked machine
+- transfer prepared assets to offline runtime hosts
+- run with `allow_network=false` and explicit local paths
+- require fail-fast instead of implicit network fallback when local assets are
+  missing
 
 Out of scope for this promotion:
 

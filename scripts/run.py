@@ -115,6 +115,24 @@ def save_config_snapshot(cfg: DictConfig, run_dir: Path) -> None:
     OmegaConf.save(cfg, config_path)
 
 
+def validate_runtime_freeze_contract(cfg: DictConfig) -> None:
+    """Validates freeze contract for promoted backbone runtime paths."""
+    backbone_name = str(OmegaConf.select(cfg, "model.backbone.name", default=""))
+    if backbone_name != "dinov2":
+        return
+
+    model_freeze = bool(
+        OmegaConf.select(cfg, "model.backbone.freeze", default=False)
+    )
+    train_freeze = bool(OmegaConf.select(cfg, "train.freeze_backbone", default=False))
+    if model_freeze != train_freeze:
+        raise ValueError(
+            "Conflicting freeze policy for dinov2: "
+            "model.backbone.freeze must match train.freeze_backbone under "
+            "current support."
+        )
+
+
 def _format_label_shape(label: Optional[torch.Tensor]) -> str:
     """Formats label tensor shape for logging."""
     if label is None:
@@ -293,6 +311,7 @@ def main(cfg: DictConfig) -> None:
 
     save_config_snapshot(cfg, run_dir)
     LOGGER.info("Saved config snapshot to run directory.")
+    validate_runtime_freeze_contract(cfg)
 
     mode = str(getattr(cfg.train, "mode", "bootstrap"))
 

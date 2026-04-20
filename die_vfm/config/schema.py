@@ -14,9 +14,8 @@ This module follows repository option C:
 
 Important:
     Presence in this module does not automatically imply current formal support
-    or runtime validation. For example, `dinov2` is represented here because it
-    exists in `configs/`, but current formal runtime support is still limited
-    by the repository spec.
+    or runtime validation. Current formal support boundaries are defined by
+    runtime code, `configs/`, and `docs/current-spec.md`.
 """
 
 from __future__ import annotations
@@ -193,8 +192,9 @@ class DummyBackboneConfig:
 class DINOv2BackboneConfig:
     """DINOv2 backbone config present in the config surface.
 
-    This config exists in the repository's config tree, but its presence here
-    does not promote it into current formal runtime support.
+    This config is part of the current formal support surface for
+    `bootstrap` and `round1_frozen`. Round2+ training semantics remain out of
+    current scope.
     """
 
     name: Literal["dinov2"] = "dinov2"
@@ -202,6 +202,9 @@ class DINOv2BackboneConfig:
     pretrained: bool = True
     freeze: bool = False
     return_cls_token: bool = True
+    allow_network: bool = True
+    local_repo_path: str | None = None
+    local_checkpoint_path: str | None = None
 
 
 @dataclass(frozen=True)

@@ -33,7 +33,8 @@ Agents must treat the following as future scope unless explicitly requested and 
 - `round3_supcon`
 - full EMA-aware resume
 - distributed resume guarantees
-- promotion of `dinov2` into current formal support
+- `dinov2` expansion beyond the current promotion boundary (`bootstrap`,
+  `round1_frozen`), including Round2+ training semantics
 
 ## Canonical Sources of Truth
 

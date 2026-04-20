@@ -285,24 +285,16 @@ Completion criteria:
 
 Current status:
 
-- `dinov2` has been explicitly kept as future-facing rather than promoted into
-  current formal support
-- current docs already align on this boundary:
-  - `docs/current-spec.md` lists `dinov2` as present in codebase but not current
-    formal support
-  - `docs/future-spec.md` keeps `dinov2` under future backbone roadmap
-  - `README.md` states `dinov2` is not yet fully wired as a current formal
-    capability
-- promotion work (builder wiring + runtime validation + tests) is intentionally
-  deferred until there is an explicit future promotion track
-- the future promotion track is now scoped narrowly to one backbone and one
-  current-runtime surface:
-  - promote only `dinov2`
-  - promote only for `bootstrap` and `round1_frozen`
-  - do not expand into Round2+ training semantics
-  - do not expand into a multi-backbone promotion matrix
-  - treat frozen embedding export plus artifact-driven evaluation as the target
-    runtime outcome
+- `dinov2` has been promoted into current formal support for:
+  - `bootstrap`
+  - `round1_frozen`
+- builder/config/runtime validation/tests are now aligned for current promotion
+  scope, including loading semantics and offline-ready fail-fast behavior
+- current docs now treat `dinov2` as a formal current-scope backbone within the
+  promotion boundary above
+- out-of-scope boundaries remain explicit:
+  - Round2+ training semantics are not part of this promotion
+  - multi-backbone support matrix is not part of this promotion
 
 Promotion checklist:
 
@@ -327,6 +319,18 @@ Promotion checklist:
    - update `docs/current-spec.md` once runtime/config/tests are landed
    - update `README.md` current-support wording
    - keep `docs/future-spec.md` focused on what remains outside this promotion
+6. Loading semantics and offline readiness
+   - add explicit config surface:
+     `allow_network`, `local_repo_path`, `local_checkpoint_path`
+   - enforce architecture-source and weight-source resolution order
+   - keep `pretrained` semantics weight-only
+   - add fail-fast wording for missing local repo/checkpoint and invalid local
+     paths
+   - document pre-download and offline deployment workflow in docs
+
+Checklist status:
+
+- all items above are now completed for current promotion scope
 
 ## Phase 7: Minimum Trustworthy End-to-End Path
 
@@ -344,7 +348,8 @@ Tasks:
    - dummy-backed
    - CPU-friendly
    - current-scope only (`bootstrap` plus `round1_frozen`)
-   - explicitly out of scope: `dinov2` promotion, Round2+, distributed modes
+   - explicitly out of scope at that phase checkpoint: `dinov2` promotion
+     (completed later in Phase 6), Round2+, distributed modes
 2. Define one fixed baseline config profile for repeatable execution:
    - `model/backbone=dummy`
    - stable pooler selection (`mean` or `attn_pooler_v1`)
