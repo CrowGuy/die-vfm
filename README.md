@@ -30,6 +30,7 @@ The repository does not yet treat `round2_ssl`, `round3_supcon`, or training-sta
 - [Testing Spec](docs/testing-spec.md)
 - [Checkpoint / Resume Spec](docs/checkpoint-resume-spec.md)
 - [Domain Adapter Spec](docs/domain-adapter-spec.md)
+- [Domain Baseline Closeout](docs/domain-baseline-closeout.md)
 - [Implementation Roadmap](docs/implementation-roadmap.md)
 
 Document roles:
@@ -41,6 +42,8 @@ Document roles:
 - `docs/checkpoint-resume-spec.md`: current checkpoint and resume contract
 - `docs/domain-adapter-spec.md`: domain dataset ingestion contract and v0
   implementation boundary
+- `docs/domain-baseline-closeout.md`: finalized baseline findings for the
+  current domain round1 execution
 - `docs/implementation-roadmap.md`: execution order for implementation work
 
 If documentation drifts, current implementation work should follow runtime code, `configs/`, and `docs/current-spec.md` before future-facing design notes.
@@ -51,6 +54,134 @@ If documentation drifts, current implementation work should follow runtime code,
 
 ```bash
 pip install -e .[dev]
+```
+
+### Install review tool extras
+
+```bash
+pip install -e .[review]
+```
+
+Use this extra when you want to launch the local pair review web tool for
+`pair_candidates.csv` / `annotations.csv` workflows.
+
+### Domain baseline onboarding quickstart (1-page)
+
+Use this section when you want the shortest path to reproduce the current
+`dinov2` domain baseline flow end-to-end.
+
+Full contract, IO schema, and detailed variants:
+- [Domain Baseline Playbook](docs/domain-baseline-playbook.md)
+
+1. Build pair candidates from sampled pool
+```bash
+python -m scripts.generate_pair_candidates \
+  --input /abs/path/to/sample_pool.csv \
+  --output /abs/path/to/pair_candidates.csv \
+  --summary-output /abs/path/to/pair_candidates_summary.csv
+```
+
+2. Review and label pairs
+```bash
+python -m scripts.run_pair_review \
+  --pairs /abs/path/to/pair_candidates.csv \
+  --annotations /abs/path/to/annotations.csv \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+3. Build Round1 domain manifest and dataset config
+```bash
+python -m scripts.build_round1_domain_assets \
+  --train-csv /abs/path/to/round1_pilot_train.csv \
+  --val-csv /abs/path/to/round1_pilot_val.csv \
+  --manifest-output /abs/path/to/round1_domain_manifest.csv \
+  --dataset-config-output /abs/path/to/configs/dataset/domain_round1_pilot.yaml \
+  --require-non-empty-val
+```
+
+4. Run Round1 baseline (`dinov2`, offline local assets)
+```bash
+python -m scripts.run \
+  experiment=round1_frozen \
+  run.run_name=domain_round1_dinov2_baseline_v1 \
+  system.device=cuda \
+  system.num_workers=4 \
+  dataloader.pin_memory=true \
+  model/backbone=dinov2 \
+  model/pooler=mean \
+  model.backbone.variant=vit_base \
+  model.backbone.pretrained=true \
+  model.backbone.freeze=true \
+  model.backbone.allow_network=false \
+  model.backbone.local_repo_path=/opt/dinov2_assets/repo/dinov2 \
+  model.backbone.local_checkpoint_path=/opt/dinov2_assets/checkpoints/dinov2_vitb14_pretrain.pth \
+  train.freeze_backbone=true \
+  train.freeze_pooler=true \
+  dataset=domain_round1_pilot \
+  evaluation.knn.evaluator.k=5 \
+  evaluation.linear_probe.trainer.device=cuda \
+  evaluation.knn.evaluator.device=cuda \
+  evaluation.retrieval.evaluator.device=cuda
+```
+
+5. Build pair benchmark manifest from reviewed pairs
+```bash
+python -m scripts.build_pair_benchmark_manifest \
+  --pair-candidates /abs/path/to/pair_candidates.csv \
+  --annotations /abs/path/to/annotations.csv \
+  --output /abs/path/to/pair_benchmark_manifest.csv \
+  --relations same,different,uncertain \
+  --label-mode empty \
+  --image-path-mode directory
+```
+
+This step selects only reviewed pairs and writes an inference-only manifest
+(`Source=Infer`) for pair benchmark embedding export. Required columns:
+`pair_id,did_a,did_b,image_id_a,image_id_b,image_path_a,image_path_b` in
+`pair_candidates.csv`, and `pair_id,review_status,visual_relation` in
+`annotations.csv`. Use `--label-mode empty` for export-only flow; switch to
+`--label-mode fine_label` only when you intentionally need a labeled manifest.
+
+6. Export pair benchmark embeddings (inference-only)
+```bash
+python -m scripts.run \
+  experiment=domain_inference_export \
+  run.run_name=pair_benchmark_dinov2_export_v1 \
+  system.device=cuda \
+  system.num_workers=4 \
+  dataloader.pin_memory=true \
+  model/backbone=dinov2 \
+  model/pooler=mean \
+  model.backbone.variant=vit_base \
+  model.backbone.pretrained=true \
+  model.backbone.freeze=true \
+  model.backbone.allow_network=false \
+  model.backbone.local_repo_path=/opt/dinov2_assets/repo/dinov2 \
+  model.backbone.local_checkpoint_path=/opt/dinov2_assets/checkpoints/dinov2_vitb14_pretrain.pth \
+  train.freeze_backbone=true \
+  train.freeze_pooler=true \
+  dataset=domain \
+  dataset.manifest_path=/abs/path/to/pair_benchmark_manifest.csv \
+  dataset.require_non_empty_val=true
+```
+
+7. Evaluate pair benchmark and run slicing analysis
+```bash
+python -m scripts.evaluate_pair_benchmark \
+  --pair-candidates /abs/path/to/pair_candidates.csv \
+  --annotations /abs/path/to/annotations.csv \
+  --embedding-split-dir /abs/path/to/runs/pair_benchmark_dinov2_export_v1/round1/embeddings/val \
+  --join-key did \
+  --output-dir /abs/path/to/pair_benchmark_eval_v1 \
+  --hard-limit 50
+
+python -m scripts.analyze_pair_benchmark_slices \
+  --pair-scores /abs/path/to/pair_benchmark_eval_v1/pair_scores.csv \
+  --pair-candidates /abs/path/to/pair_candidates.csv \
+  --output-dir /abs/path/to/pair_slice_analysis_high \
+  --confidence high \
+  --hard-limit 20
 ```
 
 ### Run bootstrap smoke test
@@ -253,6 +384,18 @@ python scripts/run.py \
 
 Expected failure wording includes:
 `Filtered val split must not mix labeled and unlabeled samples under current artifact contract.`
+
+### Launch pair review tool
+
+```bash
+python scripts/run_pair_review.py \
+  --pairs /abs/path/to/pair_candidates.csv \
+  --annotations /abs/path/to/annotations.csv
+```
+
+This launches a local FastAPI app on `http://127.0.0.1:8000/` for reviewing
+pair candidates, labeling `same` / `different` / `uncertain`, and writing
+results back to `annotations.csv`.
 
 ### Export embeddings
 
