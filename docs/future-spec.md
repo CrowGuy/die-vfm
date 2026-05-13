@@ -48,6 +48,45 @@ Expected parameter-update boundary:
 - selective freeze policies are expected here (for example: freeze parts of backbone while updating selected backbone blocks, pooler, projector, or SSL heads)
 - freeze policy should be explicit in config and reflected in checkpoint metadata
 
+### Experimental Round2 SSL v1 Skeleton
+
+An experimental Round2 SSL v1 runtime skeleton is now present in code for
+future-scope bring-up and iteration. It should still be treated as
+experimental rather than current formal support.
+
+Current experimental v1 design points:
+
+- `teacher-student` SSL with EMA teacher
+- explicit update modes:
+  - `projector_pooler_only`
+  - `last_n_blocks`
+  - `full_backbone`
+- projected global embedding cosine loss as the primary v1 loss
+- token-level projected cosine loss implemented but disabled by default
+- single-node DDP as the initial distributed strategy
+- post-train artifact ownership under DDP is `rank 0 only`
+- the recommended formal-pilot execution path separates:
+  - the distributed training run
+  - the single-process postprocess run for embedding export and offline evaluation
+- full resume is supported for the experimental Round2 skeleton using the
+  existing root `train.resume.*` config surface
+  - `full_resume` is same-lineage only
+  - cross-run initialization must use `warm_start`
+- debug precision default:
+  - `fp32`
+- pilot / production precision default:
+  - `bf16`
+- end-only evaluator orchestration
+
+Official wording for the current experimental contract:
+
+- "The Round2 runtime default update mode is `full_backbone`. This default
+  only defines fallback behavior when no experiment-specific override is
+  provided."
+- "The initial Round2 experiment sequence does not follow the runtime default.
+  The first planned execution order is `projector_pooler_only`, then
+  `last_n_blocks`, and finally `full_backbone`."
+
 ## Round3 SupCon Direction
 
 `round3_supcon` is intended for supervised contrastive fine-tuning on labeled subsets.

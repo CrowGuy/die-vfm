@@ -14,6 +14,7 @@ from die_vfm.datasets.builder import build_dataloader
 from die_vfm.models.builder import build_model
 from die_vfm.trainer import CheckpointManager
 from die_vfm.trainer import Round1FrozenRunner
+from die_vfm.trainer import Round2SSLRunner
 from die_vfm.trainer import TrainerState
 
 LOGGER = logging.getLogger(__name__)
@@ -334,6 +335,15 @@ def main(cfg: DictConfig) -> None:
         )
         runner.run()
         LOGGER.info("Round1 frozen runner completed successfully.")
+        return
+
+    if mode == "round2_ssl":
+        runner = Round2SSLRunner(
+            cfg=cfg,
+            run_dir=run_dir,
+        )
+        runner.run()
+        LOGGER.info("Round2 SSL runner completed successfully.")
         return
 
     raise ValueError(f"Unsupported train.mode: {mode}")

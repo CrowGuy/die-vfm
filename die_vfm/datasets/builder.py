@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.data import Sampler
 
 from die_vfm.datasets.base import DatasetAdapter, DatasetSample
 from die_vfm.datasets.cifar10_dataset import Cifar10DatasetAdapter
@@ -79,27 +80,39 @@ def collate_dataset_samples(
     return batch
 
 
-def build_dataloader(cfg: Any, split: str) -> DataLoader:
+def build_dataloader(
+    cfg: Any,
+    split: str,
+    *,
+    dataset: DatasetAdapter | None = None,
+    sampler: Sampler[Any] | None = None,
+    shuffle: bool | None = None,
+) -> DataLoader:
     """Builds a PyTorch dataloader for the given split.
 
     Args:
       cfg: Global project config.
       split: Dataset split name, such as "train" or "val".
+      dataset: Optional prebuilt dataset instance. When omitted, the dataset
+        is constructed from config for the requested split.
 
     Returns:
       A PyTorch dataloader instance.
     """
-    dataset = build_dataset(cfg, split=split)
-    shuffle = split == "train"
+    resolved_dataset = dataset if dataset is not None else build_dataset(cfg, split=split)
+    resolved_shuffle = split == "train" if shuffle is None else bool(shuffle)
+    if sampler is not None:
+        resolved_shuffle = False
     num_workers = int(cfg.system.num_workers)
     persistent_workers = bool(cfg.dataloader.persistent_workers)
     if num_workers == 0:
         persistent_workers = False
 
     return DataLoader(
-        dataset=dataset,
+        dataset=resolved_dataset,
         batch_size=int(cfg.dataloader.batch_size),
-        shuffle=shuffle,
+        shuffle=resolved_shuffle,
+        sampler=sampler,
         num_workers=num_workers,
         drop_last=bool(cfg.dataloader.drop_last),
         pin_memory=bool(cfg.dataloader.pin_memory),

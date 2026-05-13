@@ -1,0 +1,31 @@
+# @package _global_
+
+defaults:
+  - override /hydra/job_logging: disabled
+  - override /hydra/hydra_logging: disabled
+
+run:
+  run_name: round2_ssl_smoke
+
+train:
+  mode: round2_ssl
+  num_epochs: 2
+  update_mode: full_backbone
+  last_n_blocks: null
+  precision_mode: bf16
+  freeze_backbone: false
+  freeze_pooler: false
+
+evaluation:
+  run_linear_probe: true
+  run_knn: true
+  run_centroid: false
+  run_retrieval: true
+
+round2:
+  postprocess:
+    mode: separate_step
+  evaluation:
+    cadence: end_only
+    run_pair_benchmark: false
+    run_slicing_analysis: false

@@ -425,10 +425,19 @@ def _hard_case_slices(pair_scores_df: pd.DataFrame, limit: int) -> dict[str, pd.
     }
 
 
-def main(args: argparse.Namespace) -> None:
+def run_pair_benchmark(
+    *,
+    pair_candidates_path: Path,
+    annotations_path: Path,
+    embedding_split_dirs: list[Path],
+    join_key: str,
+    output_dir: Path,
+    hard_limit: int,
+    map_location: str,
+) -> dict[str, Any]:
     annotated_pairs = _load_pair_annotations(
-        args.pair_candidates_path,
-        args.annotations_path,
+        pair_candidates_path,
+        annotations_path,
     )
     if annotated_pairs.empty:
         raise ValueError(
@@ -438,16 +447,15 @@ def main(args: argparse.Namespace) -> None:
         )
 
     embedding_index = _build_embedding_index(
-        args.embedding_split_dirs,
-        map_location=args.map_location,
+        embedding_split_dirs,
+        map_location=map_location,
     )
     pair_scores_df, unmatched_df = _build_pair_scores(
         annotated_pairs,
         embedding_index=embedding_index,
-        join_key=args.join_key,
+        join_key=join_key,
     )
 
-    output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     pair_scores_path = output_dir / "pair_scores.csv"
     unmatched_path = output_dir / "unmatched_pairs.csv"
@@ -457,7 +465,7 @@ def main(args: argparse.Namespace) -> None:
     pair_scores_df.to_csv(pair_scores_path, index=False)
     unmatched_df.to_csv(unmatched_path, index=False)
 
-    hard_slices = _hard_case_slices(pair_scores_df, limit=args.hard_limit)
+    hard_slices = _hard_case_slices(pair_scores_df, limit=hard_limit)
     for name, dataframe in hard_slices.items():
         dataframe.to_csv(output_dir / f"{name}.csv", index=False)
 
@@ -465,10 +473,10 @@ def main(args: argparse.Namespace) -> None:
         annotated_pairs=annotated_pairs,
         matched_df=pair_scores_df,
         unmatched_df=unmatched_df,
-        join_key=args.join_key,
-        embedding_split_dirs=args.embedding_split_dirs,
-        pair_candidates_path=args.pair_candidates_path,
-        annotations_path=args.annotations_path,
+        join_key=join_key,
+        embedding_split_dirs=embedding_split_dirs,
+        pair_candidates_path=pair_candidates_path,
+        annotations_path=annotations_path,
     )
     OmegaConf.save(config=OmegaConf.create(summary), f=summary_yaml_path)
     summary_json_path.write_text(
@@ -476,12 +484,38 @@ def main(args: argparse.Namespace) -> None:
         encoding="utf-8",
     )
 
-    print(f"annotated reviewed pairs: {len(annotated_pairs)}")
-    print(f"matched pairs: {len(pair_scores_df)}")
-    print(f"unmatched pairs: {len(unmatched_df)}")
-    print(f"pair scores: {pair_scores_path}")
-    print(f"summary yaml: {summary_yaml_path}")
-    print(f"summary json: {summary_json_path}")
+    return {
+        "summary": summary,
+        "pair_scores_path": pair_scores_path,
+        "unmatched_pairs_path": unmatched_path,
+        "summary_yaml_path": summary_yaml_path,
+        "summary_json_path": summary_json_path,
+        "hard_same_far_path": output_dir / "hard_same_far.csv",
+        "hard_different_close_path": output_dir / "hard_different_close.csv",
+        "uncertain_high_similarity_path": output_dir / "uncertain_high_similarity.csv",
+    }
+
+
+def main(args: argparse.Namespace) -> None:
+    result = run_pair_benchmark(
+        pair_candidates_path=args.pair_candidates_path,
+        annotations_path=args.annotations_path,
+        embedding_split_dirs=args.embedding_split_dirs,
+        join_key=args.join_key,
+        output_dir=args.output_dir,
+        hard_limit=args.hard_limit,
+        map_location=args.map_location,
+    )
+
+    print(
+        "annotated reviewed pairs: "
+        f"{result['summary']['coverage']['annotated_reviewed_pairs']}"
+    )
+    print(f"matched pairs: {result['summary']['coverage']['matched_pairs']}")
+    print(f"unmatched pairs: {result['summary']['coverage']['unmatched_pairs']}")
+    print(f"pair scores: {result['pair_scores_path']}")
+    print(f"summary yaml: {result['summary_yaml_path']}")
+    print(f"summary json: {result['summary_json_path']}")
 
 
 if __name__ == "__main__":

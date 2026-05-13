@@ -26,8 +26,10 @@ from typing import Literal
 
 
 ResumeMode = Literal["full_resume", "warm_start"]
-TrainMode = Literal["bootstrap", "round1_frozen"]
+TrainMode = Literal["bootstrap", "round1_frozen", "round2_ssl"]
 SingleImageSource = Literal["img1", "img2"]
+UpdateMode = Literal["projector_pooler_only", "last_n_blocks", "full_backbone"]
+PrecisionMode = Literal["fp32", "bf16"]
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,9 @@ class TrainConfig:
     num_epochs: int = 1
     freeze_backbone: bool = False
     freeze_pooler: bool = False
+    update_mode: UpdateMode = "full_backbone"
+    last_n_blocks: int | None = None
+    precision_mode: PrecisionMode = "fp32"
     selection_metric: str = "knn.top1_accuracy"
     log_every_n_steps: int = 10
     run_dataloader_smoke_test: bool = True
@@ -481,6 +486,113 @@ class EvaluationConfig:
 
 
 @dataclass(frozen=True)
+class Round2OptimizerConfig:
+    name: str = "adamw"
+    learning_rate: float = 1e-4
+    weight_decay: float = 0.05
+    betas: list[float] = field(default_factory=lambda: [0.9, 0.999])
+
+
+@dataclass(frozen=True)
+class Round2SchedulerConfig:
+    name: str = "cosine"
+    min_learning_rate: float = 1e-6
+
+
+@dataclass(frozen=True)
+class Round2EMAConfig:
+    policy: Literal["fixed", "schedule"] = "fixed"
+    momentum: float = 0.996
+    final_momentum: float = 0.999
+
+
+@dataclass(frozen=True)
+class Round2ProjectorConfig:
+    hidden_dim: int | None = None
+    output_dim: int | None = None
+    num_layers: int = 2
+
+
+@dataclass(frozen=True)
+class Round2LossConfig:
+    token_loss_enabled: bool = False
+    token_loss_weight: float = 0.2
+
+
+@dataclass(frozen=True)
+class Round2AugmentationConfig:
+    horizontal_flip_prob: float = 0.5
+    vertical_flip_prob: float = 0.5
+
+
+@dataclass(frozen=True)
+class Round2DistributedConfig:
+    strategy: Literal["ddp"] = "ddp"
+    backend: str | None = None
+    find_unused_parameters: bool = False
+
+
+@dataclass(frozen=True)
+class Round2PostprocessConfig:
+    mode: Literal["in_process", "separate_step"] = "in_process"
+    checkpoint_path: str | None = None
+    auto_use_latest_checkpoint: bool = True
+
+
+@dataclass(frozen=True)
+class Round2PairBenchmarkConfig:
+    pair_candidates_path: str | None = None
+    annotations_path: str | None = None
+    join_key: Literal["did", "image_id"] = "did"
+    output_subdir: str = "pair_benchmark"
+    hard_limit: int = 50
+    map_location: str = "cpu"
+    embedding_splits: list[str] = field(default_factory=lambda: ["val"])
+
+
+@dataclass(frozen=True)
+class Round2SlicingConfig:
+    output_subdir: str = "slicing"
+    confidences: list[str] = field(default_factory=lambda: ["high", "all"])
+    hard_limit: int = 20
+
+
+@dataclass(frozen=True)
+class Round2EvaluationConfig:
+    cadence: Literal["end_only"] = "end_only"
+    run_pair_benchmark: bool = False
+    run_slicing_analysis: bool = False
+    pair_benchmark: Round2PairBenchmarkConfig = field(
+        default_factory=Round2PairBenchmarkConfig
+    )
+    slicing: Round2SlicingConfig = field(default_factory=Round2SlicingConfig)
+
+
+@dataclass(frozen=True)
+class Round2Config:
+    optimizer: Round2OptimizerConfig = field(default_factory=Round2OptimizerConfig)
+    scheduler: Round2SchedulerConfig = field(default_factory=Round2SchedulerConfig)
+    ema: Round2EMAConfig = field(default_factory=Round2EMAConfig)
+    projector: Round2ProjectorConfig = field(default_factory=Round2ProjectorConfig)
+    token_projector: Round2ProjectorConfig = field(
+        default_factory=Round2ProjectorConfig
+    )
+    loss: Round2LossConfig = field(default_factory=Round2LossConfig)
+    augmentation: Round2AugmentationConfig = field(
+        default_factory=Round2AugmentationConfig
+    )
+    postprocess: Round2PostprocessConfig = field(
+        default_factory=Round2PostprocessConfig
+    )
+    distributed: Round2DistributedConfig = field(
+        default_factory=Round2DistributedConfig
+    )
+    evaluation: Round2EvaluationConfig = field(
+        default_factory=Round2EvaluationConfig
+    )
+
+
+@dataclass(frozen=True)
 class CurrentRootConfig:
     """Typed mirror of the current root Hydra config surface."""
 
@@ -495,3 +607,4 @@ class CurrentRootConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     artifact: ArtifactConfig = field(default_factory=ArtifactConfig)
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+    round2: Round2Config = field(default_factory=Round2Config)

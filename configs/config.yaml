@@ -31,6 +31,9 @@ train:
   num_epochs: 1
   freeze_backbone: false
   freeze_pooler: false
+  update_mode: full_backbone
+  last_n_blocks: null
+  precision_mode: fp32
   selection_metric: knn.top1_accuracy
   log_every_n_steps: 10
   run_dataloader_smoke_test: true
@@ -46,6 +49,58 @@ evaluation:
   run_knn: false
   run_centroid: false
   run_retrieval: false
+
+round2:
+  optimizer:
+    name: adamw
+    learning_rate: 0.0001
+    weight_decay: 0.05
+    betas: [0.9, 0.999]
+  scheduler:
+    name: cosine
+    min_learning_rate: 0.000001
+  ema:
+    policy: fixed
+    momentum: 0.996
+    final_momentum: 0.999
+  projector:
+    hidden_dim: null
+    output_dim: null
+    num_layers: 2
+  token_projector:
+    hidden_dim: null
+    output_dim: null
+    num_layers: 2
+  loss:
+    token_loss_enabled: false
+    token_loss_weight: 0.2
+  augmentation:
+    horizontal_flip_prob: 0.5
+    vertical_flip_prob: 0.5
+  postprocess:
+    mode: in_process
+    checkpoint_path: null
+    auto_use_latest_checkpoint: true
+  distributed:
+    strategy: ddp
+    backend: null
+    find_unused_parameters: false
+  evaluation:
+    cadence: end_only
+    run_pair_benchmark: false
+    run_slicing_analysis: false
+    pair_benchmark:
+      pair_candidates_path: null
+      annotations_path: null
+      join_key: did
+      output_subdir: pair_benchmark
+      hard_limit: 50
+      map_location: cpu
+      embedding_splits: [val]
+    slicing:
+      output_subdir: slicing
+      confidences: [high, all]
+      hard_limit: 20
 
 artifact:
   embedding:

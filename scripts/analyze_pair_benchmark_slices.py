@@ -407,22 +407,28 @@ def _build_hard_cases(dataframe: pd.DataFrame, limit: int) -> pd.DataFrame:
     return hard_cases[leading_columns + remaining_columns]
 
 
-def main(args: argparse.Namespace) -> None:
+def run_pair_slicing_analysis(
+    *,
+    pair_scores_path: Path,
+    pair_candidates_path: Path,
+    output_dir: Path,
+    confidence: str,
+    hard_limit: int,
+) -> dict[str, Any]:
     enriched_scores = _load_enriched_scores(
-        pair_scores_path=args.pair_scores,
-        pair_candidates_path=args.pair_candidates,
+        pair_scores_path=pair_scores_path,
+        pair_candidates_path=pair_candidates_path,
     )
 
     filtered_scores = _apply_confidence_filter(
         enriched_scores,
-        confidence=args.confidence,
+        confidence=confidence,
     )
     if filtered_scores.empty:
         raise ValueError(
             "No rows remain after applying the requested confidence filter."
         )
 
-    output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     enriched_scores_path = output_dir / "pair_scores_enriched.csv"
@@ -442,17 +448,17 @@ def main(args: argparse.Namespace) -> None:
     slice_summary_df.to_csv(slice_summary_path, index=False)
     relation_stats_df.to_csv(relation_stats_path, index=False)
 
-    hard_cases_df = _build_hard_cases(filtered_scores, limit=args.hard_limit)
+    hard_cases_df = _build_hard_cases(filtered_scores, limit=hard_limit)
     hard_cases_df.to_csv(hard_cases_path, index=False)
 
     summary = {
         "analysis_type": "pair_benchmark_slicing",
         "input": {
-            "pair_scores_path": str(args.pair_scores.resolve()),
-            "pair_candidates_path": str(args.pair_candidates.resolve()),
+            "pair_scores_path": str(pair_scores_path.resolve()),
+            "pair_candidates_path": str(pair_candidates_path.resolve()),
         },
         "filters": {
-            "confidence": args.confidence,
+            "confidence": confidence,
         },
         "coverage": {
             "input_pair_scores": int(len(enriched_scores)),
@@ -466,15 +472,39 @@ def main(args: argparse.Namespace) -> None:
         encoding="utf-8",
     )
 
-    print(f"input pair scores: {len(enriched_scores)}")
-    print(f"filtered pair scores: {len(filtered_scores)}")
-    print(f"enriched scores: {enriched_scores_path}")
-    print(f"filtered scores: {filtered_scores_path}")
-    print(f"slice summary: {slice_summary_path}")
-    print(f"relation stats: {relation_stats_path}")
-    print(f"hard cases: {hard_cases_path}")
-    print(f"summary yaml: {summary_yaml_path}")
-    print(f"summary json: {summary_json_path}")
+    return {
+        "summary": summary,
+        "enriched_scores_path": enriched_scores_path,
+        "filtered_scores_path": filtered_scores_path,
+        "slice_summary_path": slice_summary_path,
+        "relation_stats_path": relation_stats_path,
+        "hard_cases_path": hard_cases_path,
+        "summary_yaml_path": summary_yaml_path,
+        "summary_json_path": summary_json_path,
+    }
+
+
+def main(args: argparse.Namespace) -> None:
+    result = run_pair_slicing_analysis(
+        pair_scores_path=args.pair_scores,
+        pair_candidates_path=args.pair_candidates,
+        output_dir=args.output_dir,
+        confidence=args.confidence,
+        hard_limit=args.hard_limit,
+    )
+
+    print(f"input pair scores: {result['summary']['coverage']['input_pair_scores']}")
+    print(
+        "filtered pair scores: "
+        f"{result['summary']['coverage']['filtered_pair_scores']}"
+    )
+    print(f"enriched scores: {result['enriched_scores_path']}")
+    print(f"filtered scores: {result['filtered_scores_path']}")
+    print(f"slice summary: {result['slice_summary_path']}")
+    print(f"relation stats: {result['relation_stats_path']}")
+    print(f"hard cases: {result['hard_cases_path']}")
+    print(f"summary yaml: {result['summary_yaml_path']}")
+    print(f"summary json: {result['summary_json_path']}")
 
 
 if __name__ == "__main__":

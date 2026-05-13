@@ -27,8 +27,11 @@ def test_base_config_loads() -> None:
     assert cfg.model.backbone.name == "dummy"
     assert cfg.model.pooler.name == "mean"
 
-    assert cfg.train.mode in {"bootstrap", "round1_frozen"}
+    assert cfg.train.mode in {"bootstrap", "round1_frozen", "round2_ssl"}
     assert cfg.train.num_epochs == 1
+    assert cfg.train.update_mode == "full_backbone"
+    assert cfg.train.last_n_blocks is None
+    assert cfg.train.precision_mode == "fp32"
     assert cfg.train.log_every_n_steps == 10
     assert cfg.train.run_dataloader_smoke_test is True
     assert cfg.train.run_model_forward_smoke_test is True
@@ -52,6 +55,10 @@ def test_base_config_loads() -> None:
     assert cfg.evaluation.run_knn is False
     assert cfg.evaluation.run_centroid is False
     assert cfg.evaluation.run_retrieval is False
+    assert cfg.round2.optimizer.name == "adamw"
+    assert cfg.round2.ema.policy == "fixed"
+    assert cfg.round2.loss.token_loss_enabled is False
+    assert cfg.round2.loss.token_loss_weight == 0.2
 
 
 def test_debug_model_smoke_preset_overrides_expected_root_fields() -> None:
@@ -113,3 +120,16 @@ def test_dinov2_backbone_preset_composes_expected_fields() -> None:
     assert cfg.model.backbone.allow_network is True
     assert cfg.model.backbone.local_repo_path is None
     assert cfg.model.backbone.local_checkpoint_path is None
+
+
+def test_round2_ssl_preset_composes_expected_fields() -> None:
+    cfg = _compose_config(overrides=["experiment=round2_ssl"])
+
+    assert cfg.train.mode == "round2_ssl"
+    assert cfg.train.update_mode == "full_backbone"
+    assert cfg.train.last_n_blocks is None
+    assert cfg.train.precision_mode == "bf16"
+    assert cfg.round2.evaluation.cadence == "end_only"
+    assert cfg.evaluation.run_linear_probe is True
+    assert cfg.evaluation.run_knn is True
+    assert cfg.evaluation.run_retrieval is True
